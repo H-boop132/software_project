@@ -1,0 +1,154 @@
+/* 微澜全局样式 */
+:root {
+  --wl-primary: #1f7a8c;
+  --wl-bg: #f4f8fa;
+  --wl-card: #ffffff;
+  --wl-border: #e3edf0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  background: var(--wl-bg);
+  color: #263238;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶栏 */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #ffffff;
+  border-bottom: 1px solid var(--wl-border);
+}
+
+.topbar-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-logo {
+  font-size: 22px;
+}
+
+.brand-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--wl-primary);
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: #90a4ae;
+  letter-spacing: 1px;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-link {
+  padding: 6px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #546e7a;
+  font-size: 14px;
+}
+
+.nav-link:hover {
+  background: var(--wl-bg);
+}
+
+.nav-link.active {
+  color: var(--wl-primary);
+  background: #e1f3f6;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.compose-btn {
+  background: var(--wl-primary);
+  color: #fff;
+  padding: 7px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.compose-btn:hover {
+  opacity: 0.9;
+}
+
+.user-chip {
+  color: var(--wl-primary);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+/* 主区域 */
+.main {
+  flex: 1;
+  max-width: 960px;
+  width: 100%;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+
+.footer {
+  text-align: center;
+  color: #90a4ae;
+  font-size: 12px;
+  padding: 28px 0 20px;
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--wl-card);
+  border: 1px solid var(--wl-border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.empty-tip {
+  text-align: center;
+  color: #90a4ae;
+  padding: 48px 0;
+}
