@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import RippleCard from '@/components/RippleCard.vue'
 import { listRipples, getHotTides } from '@/api/ripples'
-import type { LikeOut, RippleOut, TopicOut } from '@/api/types'
+import type { CollectionOut, LikeOut, RippleOut, TopicOut } from '@/api/types'
 
 const ripples = ref<RippleOut[]>([])
 const topics = ref<TopicOut[]>([])
@@ -29,6 +29,11 @@ async function loadRipples() {
   } finally {
     loading.value = false
   }
+}
+
+function updateCollection(state: CollectionOut) {
+  const ripple = ripples.value.find((r) => r.id === state.ripple_id)
+  if (ripple) ripple.is_collected = state.is_collected
 }
 
 function search() {
@@ -93,7 +98,13 @@ onMounted(async () => {
     </div>
 
     <div v-loading="loading">
-      <RippleCard v-for="r in ripples" :key="r.id" :ripple="r" @like-updated="updateLike" />
+      <RippleCard
+        v-for="r in ripples"
+        :key="r.id"
+        :ripple="r"
+        @like-updated="updateLike"
+        @collection-updated="updateCollection"
+      />
       <div v-if="!loading && ripples.length === 0" class="empty-tip">
         还没有微澜，来掀开第一朵吧 🌊
       </div>

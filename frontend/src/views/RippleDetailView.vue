@@ -2,9 +2,10 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getRippleDetail } from '@/api/ripples'
-import type { LikeOut, RippleDetail } from '@/api/types'
+import type { CollectionOut, LikeOut, RippleDetail } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
+import CollectionButton from '@/components/CollectionButton.vue'
 
 const route = useRoute()
 const detail = ref<RippleDetail | null>(null)
@@ -14,6 +15,12 @@ function updateLike(state: LikeOut) {
   if (detail.value && detail.value.ripple.id === state.ripple_id) {
     detail.value.ripple.is_liked = state.is_liked
     detail.value.ripple.like_count = state.like_count
+  }
+}
+
+function updateCollection(state: CollectionOut) {
+  if (detail.value && detail.value.ripple.id === state.ripple_id) {
+    detail.value.ripple.is_collected = state.is_collected
   }
 }
 
@@ -77,6 +84,7 @@ onMounted(async () => {
           <span v-if="detail.ripple.topic" class="rc-topic"># {{ detail.ripple.topic.name }}</span>
           <span>💬 {{ detail.ripple.echo_count }}</span>
           <LikeButton :ripple="detail.ripple" @updated="updateLike" />
+          <CollectionButton :ripple="detail.ripple" @updated="updateCollection" />
         </div>
       </div>
 
@@ -177,6 +185,7 @@ export default {
   font-size: 13px;
   color: #78909c;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
 }

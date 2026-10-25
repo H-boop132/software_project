@@ -6,3 +6,8 @@ class LikeOut(BaseModel):
     ripple_id: int
     is_liked: bool
     like_count: int
+
+
+class CollectionOut(BaseModel):
+    ripple_id: int
+    is_collected: bool
