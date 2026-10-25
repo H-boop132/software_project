@@ -2,10 +2,10 @@
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session
 
-from app.models import Echo, Emotion, Like, Ripple, Topic, User
+from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, Topic, User
 from app.schemas.ripple import (
     EchoOut,
     MoodOut,
@@ -35,7 +35,13 @@ def _count_subqueries():
     return like_cnt, echo_cnt
 
 
-def _to_ripple_out(ripple: Ripple, like_count: int = 0, echo_count: int = 0) -> RippleOut:
+def _to_ripple_out(
+    ripple: Ripple,
+    like_count: int = 0,
+    echo_count: int = 0,
+    is_liked: bool = False,
+    is_collected: bool = False,
+) -> RippleOut:
     return RippleOut(
         id=ripple.id,
         content=ripple.content,
@@ -46,7 +52,33 @@ def _to_ripple_out(ripple: Ripple, like_count: int = 0, echo_count: int = 0) -> 
         images=ripple.images or [],
         created_at=ripple.created_at,
         like_count=like_count,
+        is_liked=is_liked,
+        is_collected=is_collected,
         echo_count=echo_count,
+    )
+
+
+def _liked_ids(db: Session, ids: list[int], user: User | None) -> set[int]:
+    """批量读取本人状态，不为列表里的每条微澜单独查询。"""
+    if user is None or not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(Like.ripple_id).where(Like.user_id == user.id, Like.ripple_id.in_(ids))
+        ).all()
+    )
+
+
+def _collected_ids(db: Session, ids: list[int], user: User | None) -> set[int]:
+    """批量读取本人收藏状态，查询次数不随卡片数量增加。"""
+    if user is None or not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(Collection.ripple_id).where(
+                Collection.user_id == user.id, Collection.ripple_id.in_(ids)
+            )
+        ).all()
     )
 
 
@@ -59,6 +91,9 @@ def list_ripples(
     keyword: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    current_user: User | None = None,
+    author_id: int | None = None,
+    following_user_id: int | None = None,
 ) -> list[RippleOut]:
     """微澜列表：默认仅公开（published）；管理端可传 status=None 查看全部状态
     支持关键词（内容模糊匹配）与发布时间范围筛选
@@ -74,6 +109,12 @@ def list_ripples(
     )
     if status is not None:
         stmt = stmt.where(Ripple.status == status)
+    if author_id is not None:
+        stmt = stmt.where(Ripple.user_id == author_id)
+    if following_user_id is not None:
+        stmt = stmt.where(Ripple.user_id.in_(
+            select(Follow.followee_id).where(Follow.follower_id == following_user_id)
+        ))
     if topic_id is not None:
         stmt = stmt.where(Ripple.topic_id == topic_id)
     if keyword:
@@ -84,10 +125,17 @@ def list_ripples(
         # 传入的 end 为日期时按当天 23:59:59 处理（含当天全天）
         stmt = stmt.where(Ripple.created_at < end + timedelta(days=1))
     rows = db.execute(stmt).all()
-    return [_to_ripple_out(r, c1 or 0, c2 or 0) for r, c1, c2 in rows]
+    liked = _liked_ids(db, [r.id for r, _, _ in rows], current_user)
+    collected = _collected_ids(db, [r.id for r, _, _ in rows], current_user)
+    return [
+        _to_ripple_out(r, c1 or 0, c2 or 0, r.id in liked, r.id in collected)
+        for r, c1, c2 in rows
+    ]
 
 
-def ripples_to_out(db: Session, ripples: list[Ripple]) -> list[RippleOut]:
+def ripples_to_out(
+    db: Session, ripples: list[Ripple], current_user: User | None = None
+) -> list[RippleOut]:
     """把任意 Ripple 集合转为输出模型（含点赞/回声计数，供审核队列等使用）"""
     if not ripples:
         return []
@@ -107,8 +155,14 @@ def ripples_to_out(db: Session, ripples: list[Ripple]) -> list[RippleOut]:
             )
         ).all()
     )
+    liked = _liked_ids(db, ids, current_user)
+    collected = _collected_ids(db, ids, current_user)
     return [
-        _to_ripple_out(r, like_map.get(r.id, 0), echo_map.get(r.id, 0)) for r in ripples
+        _to_ripple_out(
+            r, like_map.get(r.id, 0), echo_map.get(r.id, 0),
+            r.id in liked, r.id in collected,
+        )
+        for r in ripples
     ]
 
 
@@ -125,7 +179,12 @@ def list_my_ripples(db: Session, user: User, limit: int = 50, offset: int = 0) -
         .offset(offset)
     )
     rows = db.execute(stmt).all()
-    return [_to_ripple_out(r, c1 or 0, c2 or 0) for r, c1, c2 in rows]
+    liked = _liked_ids(db, [r.id for r, _, _ in rows], user)
+    collected = _collected_ids(db, [r.id for r, _, _ in rows], user)
+    return [
+        _to_ripple_out(r, c1 or 0, c2 or 0, r.id in liked, r.id in collected)
+        for r, c1, c2 in rows
+    ]
 
 
 def create_ripple(db: Session, user: User, data: RippleCreate) -> RippleOut:
@@ -175,12 +234,16 @@ def get_ripple_detail(
         .outerjoin(echo_cnt, echo_cnt.c.root_ripple_id == Ripple.id)
         .where(Ripple.id == ripple_id)
     ).first()
-    ripple_out = _to_ripple_out(ripple, row[0] or 0, row[1] or 0)
+    liked = _liked_ids(db, [ripple_id], current_user)
+    collected = _collected_ids(db, [ripple_id], current_user)
+    ripple_out = _to_ripple_out(
+        ripple, row[0] or 0, row[1] or 0, ripple_id in liked, ripple_id in collected
+    )
 
     echoes = db.scalars(
         select(Echo)
         .where(Echo.root_ripple_id == ripple_id)
-        .order_by(Echo.created_at.asc())
+        .order_by(Echo.created_at.asc(), Echo.id.asc())
     ).all()
     return RippleDetail(ripple=ripple_out, echoes=_build_echo_tree(echoes))
 
@@ -227,30 +290,48 @@ def _build_echo_tree(echoes: list[Echo]) -> list[EchoOut]:
     return roots
 
 
-def list_tides(db: Session) -> list[TideOut]:
-    """话题潮汐榜：热度 = 基础热度 + 微澜×10 + 回声×5 + 点赞×2，趋势与均值对比"""
+def list_tides(db: Session, now: datetime | None = None) -> list[TideOut]:
+    """互动贡献以 72 小时为半衰期，趋势比较相邻两个 24 小时窗口。"""
+    now = now or datetime.now()
+    recent_start = now - timedelta(hours=24)
+    previous_start = now - timedelta(hours=48)
+
+    def activity(created_at, weight):
+        age = func.greatest(func.timestampdiff(text("SECOND"), created_at, now), 0)
+        return (
+            func.count().label("cnt"),
+            func.sum(weight * func.pow(0.5, age / (72 * 3600))).label("score"),
+            func.sum(case((created_at >= recent_start, weight), else_=0)).label("recent"),
+            func.sum(case((and_(created_at >= previous_start, created_at < recent_start), weight), else_=0)).label("previous"),
+        )
+
     ripple_cnt = (
-        select(Ripple.topic_id, func.count(Ripple.id).label("cnt"))
-        .where(Ripple.topic_id.is_not(None))
+        select(Ripple.topic_id, *activity(Ripple.created_at, _W_RIPPLE))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     echo_cnt = (
-        select(Ripple.topic_id, func.count(Echo.id).label("cnt"))
+        select(Ripple.topic_id, *activity(Echo.created_at, _W_ECHO))
         .join(Echo, Echo.root_ripple_id == Ripple.id)
-        .where(Ripple.topic_id.is_not(None))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     like_cnt = (
-        select(Ripple.topic_id, func.count(Like.id).label("cnt"))
+        select(Ripple.topic_id, *activity(Like.created_at, _W_LIKE))
         .join(Like, Like.ripple_id == Ripple.id)
-        .where(Ripple.topic_id.is_not(None))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     stmt = (
-        select(Topic, ripple_cnt.c.cnt, echo_cnt.c.cnt, like_cnt.c.cnt)
+        select(
+            Topic, ripple_cnt.c.cnt, echo_cnt.c.cnt,
+            ripple_cnt.c.score, echo_cnt.c.score, like_cnt.c.score,
+            ripple_cnt.c.recent, echo_cnt.c.recent, like_cnt.c.recent,
+            ripple_cnt.c.previous, echo_cnt.c.previous, like_cnt.c.previous,
+        )
         .outerjoin(ripple_cnt, ripple_cnt.c.topic_id == Topic.id)
         .outerjoin(echo_cnt, echo_cnt.c.topic_id == Topic.id)
         .outerjoin(like_cnt, like_cnt.c.topic_id == Topic.id)
@@ -258,22 +339,23 @@ def list_tides(db: Session) -> list[TideOut]:
     )
     rows = db.execute(stmt).all()
     items: list[TideOut] = []
-    for topic, rc, ec, lc in rows:
-        r, e, l = rc or 0, ec or 0, lc or 0
-        heat = topic.heat_base + r * _W_RIPPLE + e * _W_ECHO + l * _W_LIKE
+    for row in rows:
+        topic, rc, ec = row[:3]
+        heat = round(topic.heat_base + sum(float(value or 0) for value in row[3:6]))
+        recent = sum(int(value or 0) for value in row[6:9])
+        previous = sum(int(value or 0) for value in row[9:12])
+        trend = "↑" if recent > previous * 1.1 else ("↓" if recent < previous * 0.9 else "→")
         items.append(
             TideOut(
                 topic=topic,
                 heat=heat,
-                ripple_count=r,
-                echo_count=e,
-                trend="",  # 下方按均值计算
+                ripple_count=rc or 0,
+                echo_count=ec or 0,
+                trend=trend,
+                recent_activity=recent,
+                previous_activity=previous,
             )
         )
-    if items:
-        avg = sum(i.heat for i in items) / len(items)
-        for i in items:
-            i.trend = "↑" if i.heat > avg * 1.1 else ("↓" if i.heat < avg * 0.9 else "→")
     items.sort(key=lambda i: i.heat, reverse=True)
     return items
 
@@ -283,6 +365,7 @@ def mood_summary(db: Session) -> list[MoodOut]:
     rows = db.execute(
         select(Emotion, func.count(Ripple.id).label("cnt"))
         .join(Ripple, Ripple.emotion_code == Emotion.code)
+        .where(Ripple.status == "published")
         .group_by(Emotion.code, Emotion.name, Emotion.color)
         .order_by(func.count(Ripple.id).desc())
     ).all()

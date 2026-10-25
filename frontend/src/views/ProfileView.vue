@@ -1,17 +1,42 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { fetchMyRipples, updateRipple } from '@/api/ripples'
-import type { RippleOut } from '@/api/types'
+import type { LikeOut, RippleOut, UserProfile } from '@/api/types'
+import { fetchUserProfile } from '@/api/users'
 import ImageViewer from '@/components/ImageViewer.vue'
+import MyCollections from '@/components/MyCollections.vue'
 
 const userStore = useUserStore()
 const { isLoggedIn, user } = storeToRefs(userStore)
+const route = useRoute()
+const router = useRouter()
+const activeTab = ref(route.query.tab === 'collections' ? 'collections' : 'ripples')
+
+function changeTab(name: string | number) {
+  void router.replace({
+    query: { ...route.query, tab: name === 'collections' ? 'collections' : undefined },
+  })
+}
+
+watch(() => route.query.tab, (tab) => {
+  activeTab.value = tab === 'collections' ? 'collections' : 'ripples'
+})
 
 const myRipples = ref<RippleOut[]>([])
 const loading = ref(false)
+const social = ref<UserProfile | null>(null)
+
+function updateLike(state: LikeOut) {
+  const ripple = myRipples.value.find((item) => item.id === state.ripple_id)
+  if (ripple) {
+    ripple.is_liked = state.is_liked
+    ripple.like_count = state.like_count
+  }
+}
 
 /* ---------- 图片放大预览 ---------- */
 const viewer = reactive({
@@ -82,9 +107,12 @@ async function submitEdit() {
   }
 }
 
-onMounted(() => {
-  userStore.refreshMe()
-  loadMyRipples()
+onMounted(async () => {
+  await userStore.refreshMe()
+  if (!user.value) return
+  void loadMyRipples()
+  try { social.value = await fetchUserProfile(user.value.id) }
+  catch { /* 全局提示 */ }
 })
 </script>
 
@@ -101,47 +129,57 @@ onMounted(() => {
               @{{ user.username }} · {{ user.role === 'admin' ? '管理员' : '普通用户' }}
             </div>
             <div class="me-bio">{{ user.bio || '还没有签名，去写一句吧。' }}</div>
+            <div v-if="social" class="me-meta">
+              <router-link :to="`/users/${user.id}?tab=following`">关注 {{ social.following_count }}</router-link>
+              · <router-link :to="`/users/${user.id}?tab=followers`">粉丝 {{ social.follower_count }}</router-link>
+            </div>
           </div>
         </div>
       </template>
       <div v-else class="empty-tip">请先登录再访问个人主页</div>
     </div>
 
-    <!-- 我的微澜 -->
+    <!-- 个人内容与收藏 -->
     <template v-if="isLoggedIn && user">
-      <h3 class="section-title">我的微澜</h3>
-      <div v-loading="loading">
-        <div v-for="r in myRipples" :key="r.id" class="card my-ripple">
-          <div class="mr-head">
-            <el-tag :type="statusTag(r).type" size="small">{{ statusTag(r).text }}</el-tag>
-            <span class="mr-time">{{ new Date(r.created_at).toLocaleString('zh-CN') }}</span>
-            <span class="mr-stats">💬{{ r.echo_count }} ❤{{ r.like_count }}</span>
+      <el-tabs v-model="activeTab" class="profile-tabs" @tab-change="changeTab">
+        <el-tab-pane label="我的微澜" name="ripples">
+          <div v-loading="loading">
+            <div v-for="r in myRipples" :key="r.id" class="card my-ripple">
+              <div class="mr-head">
+                <el-tag :type="statusTag(r).type" size="small">{{ statusTag(r).text }}</el-tag>
+                <span class="mr-time">{{ new Date(r.created_at).toLocaleString('zh-CN') }}</span>
+                <span class="mr-stats">💬{{ r.echo_count }} ❤{{ r.like_count }}</span>
+              </div>
+              <p class="mr-content">{{ r.content }}</p>
+              <div v-if="r.images?.length" class="mr-images">
+                <img
+                  v-for="(url, i) in r.images.slice(0, 4)"
+                  :key="i"
+                  :src="url"
+                  class="mr-img"
+                  alt="配图"
+                  @click="openViewer(r.images, i)"
+                />
+              </div>
+              <div v-if="r.status === 'banned'" class="mr-action">
+                <el-button type="primary" size="small" @click="openEdit(r)">
+                  修改并重新提交审核
+                </el-button>
+                <span class="mr-hint">修改后需管理员审核通过才会重新公开</span>
+              </div>
+              <div v-else-if="r.status === 'pending'" class="mr-hint">
+                内容正在审核中，请耐心等待
+              </div>
+            </div>
+            <div v-if="!loading && myRipples.length === 0" class="empty-tip">
+              还没有发过微澜，去记录第一朵涟漪吧
+            </div>
           </div>
-          <p class="mr-content">{{ r.content }}</p>
-          <div v-if="r.images?.length" class="mr-images">
-            <img
-              v-for="(url, i) in r.images.slice(0, 4)"
-              :key="i"
-              :src="url"
-              class="mr-img"
-              alt="配图"
-              @click="openViewer(r.images, i)"
-            />
-          </div>
-          <div v-if="r.status === 'banned'" class="mr-action">
-            <el-button type="primary" size="small" @click="openEdit(r)">
-              修改并重新提交审核
-            </el-button>
-            <span class="mr-hint">修改后需管理员审核通过才会重新公开</span>
-          </div>
-          <div v-else-if="r.status === 'pending'" class="mr-hint">
-            内容正在审核中，请耐心等待
-          </div>
-        </div>
-        <div v-if="!loading && myRipples.length === 0" class="empty-tip">
-          还没有发过微澜，去记录第一朵涟漪吧
-        </div>
-      </div>
+        </el-tab-pane>
+        <el-tab-pane label="我的收藏" name="collections">
+          <MyCollections v-if="activeTab === 'collections'" @like-updated="updateLike" />
+        </el-tab-pane>
+      </el-tabs>
     </template>
 
     <ImageViewer
@@ -211,9 +249,8 @@ onMounted(() => {
   font-size: 14px;
 }
 
-.section-title {
-  font-size: 16px;
-  margin: 24px 0 12px;
+.profile-tabs {
+  margin-top: 24px;
 }
 
 .my-ripple {

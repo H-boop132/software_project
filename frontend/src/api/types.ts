@@ -20,6 +20,27 @@ export interface EmotionOut {
   color: string
 }
 
+export interface UserProfile {
+  id: number
+  username: string
+  nickname: string
+  avatar_url: string | null
+  bio: string | null
+  mood_tone: string | null
+  created_at: string
+  follower_count: number
+  following_count: number
+  is_following: boolean
+  follows_you: boolean
+}
+
+export interface UserPage {
+  items: UserProfile[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface TopicOut {
   id: number
   name: string
@@ -37,7 +58,27 @@ export interface RippleOut {
   images: string[]
   created_at: string
   like_count: number
+  is_liked: boolean
+  is_collected: boolean
   echo_count: number
+}
+
+export interface LikeOut {
+  ripple_id: number
+  is_liked: boolean
+  like_count: number
+}
+
+export interface CollectionOut {
+  ripple_id: number
+  is_collected: boolean
+}
+
+export interface CollectionPage {
+  items: RippleOut[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface EchoOut {
@@ -48,6 +89,17 @@ export interface EchoOut {
   parent_echo_id: number | null
   created_at: string
   children: EchoOut[]
+}
+
+export interface EchoPayload {
+  content: string
+  parent_echo_id?: number | null
+  emotion_code?: string | null
+}
+
+export interface EchoDeleteOut {
+  ripple_id: number
+  echo_count: number
 }
 
 export interface RippleDetail {
@@ -61,6 +113,8 @@ export interface TideOut {
   ripple_count: number
   echo_count: number
   trend: string
+  recent_activity: number
+  previous_activity: number
 }
 
 export interface MoodOut {

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import type { RippleOut } from '@/api/types'
+import type { CollectionOut, LikeOut, RippleOut } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
+import LikeButton from '@/components/LikeButton.vue'
+import CollectionButton from '@/components/CollectionButton.vue'
 
 defineProps<{ ripple: RippleOut }>()
+const emit = defineEmits<{
+  'like-updated': [state: LikeOut]
+  'collection-updated': [state: CollectionOut]
+}>()
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -49,7 +55,7 @@ onMounted(updateArrows)
 <template>
   <div class="card ripple-card">
     <div class="rc-head">
-      <span class="rc-nickname">{{ ripple.user.nickname }}</span>
+      <router-link :to="`/users/${ripple.user.id}`" class="rc-nickname">{{ ripple.user.nickname }}</router-link>
       <span class="rc-time">{{ formatTime(ripple.created_at) }}</span>
       <span
         v-if="ripple.emotion"
@@ -110,7 +116,8 @@ onMounted(updateArrows)
     <div class="rc-foot">
       <span v-if="ripple.topic" class="rc-topic"># {{ ripple.topic.name }}</span>
       <span class="rc-stat">💬 {{ ripple.echo_count }}</span>
-      <span class="rc-stat">❤ {{ ripple.like_count }}</span>
+      <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
+      <CollectionButton :ripple="ripple" @updated="emit('collection-updated', $event)" />
     </div>
   </div>
 </template>
@@ -134,6 +141,7 @@ onMounted(updateArrows)
 .rc-nickname {
   font-weight: 600;
   color: #37474f;
+  text-decoration: none;
 }
 
 .rc-time {
@@ -214,6 +222,8 @@ onMounted(updateArrows)
 
 .rc-foot {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 14px;
   font-size: 13px;
   color: #78909c;

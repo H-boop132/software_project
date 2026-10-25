@@ -1,7 +1,7 @@
 """互动模型：点赞 / 关注 / 收藏"""
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy import BigInteger, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -9,6 +9,7 @@ from app.core.database import Base
 
 class Like(Base):
     __tablename__ = "likes"
+    __table_args__ = (UniqueConstraint("user_id", "ripple_id", name="uk_user_ripple"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -22,6 +23,7 @@ class Like(Base):
 
 class Follow(Base):
     __tablename__ = "follows"
+    __table_args__ = (UniqueConstraint("follower_id", "followee_id", name="uk_follow"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     follower_id: Mapped[int] = mapped_column(
@@ -35,6 +37,7 @@ class Follow(Base):
 
 class Collection(Base):
     __tablename__ = "collections"
+    __table_args__ = (UniqueConstraint("user_id", "ripple_id", name="uk_user_ripple"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(

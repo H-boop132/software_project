@@ -2,25 +2,45 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import RippleCard from '@/components/RippleCard.vue'
-import { listRipples, getHotTides } from '@/api/ripples'
-import type { RippleOut, TopicOut } from '@/api/types'
+import { listRipples, listFollowingRipples, getHotTides } from '@/api/ripples'
+import type { CollectionOut, LikeOut, RippleOut, TopicOut } from '@/api/types'
 
 const ripples = ref<RippleOut[]>([])
 const topics = ref<TopicOut[]>([])
 const activeTopic = ref<number | null>(null)
 const keyword = ref('')
 const loading = ref(false)
+const feed = ref('all')
+let requestVersion = 0
+
+function updateLike(state: LikeOut) {
+  const ripple = ripples.value.find((r) => r.id === state.ripple_id)
+  if (ripple) {
+    ripple.is_liked = state.is_liked
+    ripple.like_count = state.like_count
+  }
+}
 
 async function loadRipples() {
+  const version = ++requestVersion
   loading.value = true
   try {
-    ripples.value = await listRipples({
+    const load = feed.value === 'following' ? listFollowingRipples : listRipples
+    const result = await load({
       ...(activeTopic.value ? { topic_id: activeTopic.value } : {}),
       ...(keyword.value.trim() ? { keyword: keyword.value.trim() } : {}),
     })
+    if (version === requestVersion) ripples.value = result
+  } catch {
+    // 全局提示错误，保留已有列表。
   } finally {
-    loading.value = false
+    if (version === requestVersion) loading.value = false
   }
+}
+
+function updateCollection(state: CollectionOut) {
+  const ripple = ripples.value.find((r) => r.id === state.ripple_id)
+  if (ripple) ripple.is_collected = state.is_collected
 }
 
 function search() {
@@ -52,6 +72,10 @@ onMounted(async () => {
     </section>
 
     <div class="search-bar">
+      <el-radio-group v-model="feed" aria-label="时间线范围" @change="loadRipples" style="margin-bottom: 12px">
+        <el-radio-button value="all">全部微澜</el-radio-button>
+        <el-radio-button value="following">我关注的</el-radio-button>
+      </el-radio-group>
       <el-input
         v-model="keyword"
         placeholder="搜索微澜内容关键词…"
@@ -85,9 +109,15 @@ onMounted(async () => {
     </div>
 
     <div v-loading="loading">
-      <RippleCard v-for="r in ripples" :key="r.id" :ripple="r" />
+      <RippleCard
+        v-for="r in ripples"
+        :key="r.id"
+        :ripple="r"
+        @like-updated="updateLike"
+        @collection-updated="updateCollection"
+      />
       <div v-if="!loading && ripples.length === 0" class="empty-tip">
-        还没有微澜，来掀开第一朵吧 🌊
+        {{ feed === 'following' ? '关注喜欢的作者后，他们的公开微澜会出现在这里。' : '还没有微澜，来掀开第一朵吧 🌊' }}
       </div>
     </div>
   </div>
