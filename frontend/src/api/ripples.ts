@@ -21,6 +21,10 @@ export function listRipples(params: RippleListParams = {}) {
   return request.get<unknown, RippleOut[]>('/ripples', { params })
 }
 
+export function listFollowingRipples(params: RippleListParams = {}) {
+  return request.get<unknown, RippleOut[]>('/ripples/following', { params })
+}
+
 export function createRipple(data: RipplePayload) {
   return request.post<unknown, RippleOut>('/ripples', data)
 }

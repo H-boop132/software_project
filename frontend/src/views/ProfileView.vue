@@ -5,7 +5,8 @@ import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { fetchMyRipples, updateRipple } from '@/api/ripples'
-import type { LikeOut, RippleOut } from '@/api/types'
+import type { LikeOut, RippleOut, UserProfile } from '@/api/types'
+import { fetchUserProfile } from '@/api/users'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
 
@@ -27,6 +28,7 @@ watch(() => route.query.tab, (tab) => {
 
 const myRipples = ref<RippleOut[]>([])
 const loading = ref(false)
+const social = ref<UserProfile | null>(null)
 
 function updateLike(state: LikeOut) {
   const ripple = myRipples.value.find((item) => item.id === state.ripple_id)
@@ -105,9 +107,12 @@ async function submitEdit() {
   }
 }
 
-onMounted(() => {
-  userStore.refreshMe()
-  loadMyRipples()
+onMounted(async () => {
+  await userStore.refreshMe()
+  if (!user.value) return
+  void loadMyRipples()
+  try { social.value = await fetchUserProfile(user.value.id) }
+  catch { /* 全局提示 */ }
 })
 </script>
 
@@ -124,6 +129,10 @@ onMounted(() => {
               @{{ user.username }} · {{ user.role === 'admin' ? '管理员' : '普通用户' }}
             </div>
             <div class="me-bio">{{ user.bio || '还没有签名，去写一句吧。' }}</div>
+            <div v-if="social" class="me-meta">
+              <router-link :to="`/users/${user.id}?tab=following`">关注 {{ social.following_count }}</router-link>
+              · <router-link :to="`/users/${user.id}?tab=followers`">粉丝 {{ social.follower_count }}</router-link>
+            </div>
           </div>
         </div>
       </template>

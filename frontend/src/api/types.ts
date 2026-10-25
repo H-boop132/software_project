@@ -20,6 +20,27 @@ export interface EmotionOut {
   color: string
 }
 
+export interface UserProfile {
+  id: number
+  username: string
+  nickname: string
+  avatar_url: string | null
+  bio: string | null
+  mood_tone: string | null
+  created_at: string
+  follower_count: number
+  following_count: number
+  is_following: boolean
+  follows_you: boolean
+}
+
+export interface UserPage {
+  items: UserProfile[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface TopicOut {
   id: number
   name: string

@@ -23,6 +23,7 @@ class Like(Base):
 
 class Follow(Base):
     __tablename__ = "follows"
+    __table_args__ = (UniqueConstraint("follower_id", "followee_id", name="uk_follow"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     follower_id: Mapped[int] = mapped_column(

@@ -57,6 +57,19 @@ def my_ripples(
     return ripple_service.list_my_ripples(db, user, limit=limit, offset=offset)
 
 
+@router.get("/following", response_model=list[RippleOut])
+def following_ripples(
+    topic_id: int | None = None, keyword: str | None = None,
+    limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """只显示已关注作者的公开微澜。"""
+    return ripple_service.list_ripples(
+        db, following_user_id=user.id, current_user=user,
+        topic_id=topic_id, keyword=keyword, limit=limit, offset=offset,
+    )
+
+
 @router.get("/{ripple_id}", response_model=RippleDetail)
 def ripple_detail(
     ripple_id: int,
