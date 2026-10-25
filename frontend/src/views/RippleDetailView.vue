@@ -2,12 +2,20 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getRippleDetail } from '@/api/ripples'
-import type { EchoOut, RippleDetail } from '@/api/types'
+import type { LikeOut, RippleDetail } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
+import LikeButton from '@/components/LikeButton.vue'
 
 const route = useRoute()
 const detail = ref<RippleDetail | null>(null)
 const loading = ref(false)
+
+function updateLike(state: LikeOut) {
+  if (detail.value && detail.value.ripple.id === state.ripple_id) {
+    detail.value.ripple.is_liked = state.is_liked
+    detail.value.ripple.like_count = state.like_count
+  }
+}
 
 /* ---------- 图片放大预览 ---------- */
 const viewer = reactive({
@@ -67,7 +75,8 @@ onMounted(async () => {
         </div>
         <div class="rc-foot">
           <span v-if="detail.ripple.topic" class="rc-topic"># {{ detail.ripple.topic.name }}</span>
-          <span>💬 {{ detail.ripple.echo_count }} · ❤ {{ detail.ripple.like_count }}</span>
+          <span>💬 {{ detail.ripple.echo_count }}</span>
+          <LikeButton :ripple="detail.ripple" @updated="updateLike" />
         </div>
       </div>
 
@@ -168,6 +177,7 @@ export default {
   font-size: 13px;
   color: #78909c;
   display: flex;
+  align-items: center;
   gap: 14px;
 }
 
