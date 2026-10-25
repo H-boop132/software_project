@@ -93,6 +93,8 @@ class TideOut(BaseModel):
     ripple_count: int
     echo_count: int
     trend: str  # ↑ 上升 / ↓ 回落 / → 平稳
+    recent_activity: int = 0
+    previous_activity: int = 0
 
 
 class MoodOut(BaseModel):

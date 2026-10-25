@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session
 
 from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, Topic, User
@@ -290,30 +290,48 @@ def _build_echo_tree(echoes: list[Echo]) -> list[EchoOut]:
     return roots
 
 
-def list_tides(db: Session) -> list[TideOut]:
-    """话题潮汐榜：热度 = 基础热度 + 微澜×10 + 回声×5 + 点赞×2，趋势与均值对比"""
+def list_tides(db: Session, now: datetime | None = None) -> list[TideOut]:
+    """互动贡献以 72 小时为半衰期，趋势比较相邻两个 24 小时窗口。"""
+    now = now or datetime.now()
+    recent_start = now - timedelta(hours=24)
+    previous_start = now - timedelta(hours=48)
+
+    def activity(created_at, weight):
+        age = func.greatest(func.timestampdiff(text("SECOND"), created_at, now), 0)
+        return (
+            func.count().label("cnt"),
+            func.sum(weight * func.pow(0.5, age / (72 * 3600))).label("score"),
+            func.sum(case((created_at >= recent_start, weight), else_=0)).label("recent"),
+            func.sum(case((and_(created_at >= previous_start, created_at < recent_start), weight), else_=0)).label("previous"),
+        )
+
     ripple_cnt = (
-        select(Ripple.topic_id, func.count(Ripple.id).label("cnt"))
+        select(Ripple.topic_id, *activity(Ripple.created_at, _W_RIPPLE))
         .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     echo_cnt = (
-        select(Ripple.topic_id, func.count(Echo.id).label("cnt"))
+        select(Ripple.topic_id, *activity(Echo.created_at, _W_ECHO))
         .join(Echo, Echo.root_ripple_id == Ripple.id)
         .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     like_cnt = (
-        select(Ripple.topic_id, func.count(Like.id).label("cnt"))
+        select(Ripple.topic_id, *activity(Like.created_at, _W_LIKE))
         .join(Like, Like.ripple_id == Ripple.id)
         .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     stmt = (
-        select(Topic, ripple_cnt.c.cnt, echo_cnt.c.cnt, like_cnt.c.cnt)
+        select(
+            Topic, ripple_cnt.c.cnt, echo_cnt.c.cnt,
+            ripple_cnt.c.score, echo_cnt.c.score, like_cnt.c.score,
+            ripple_cnt.c.recent, echo_cnt.c.recent, like_cnt.c.recent,
+            ripple_cnt.c.previous, echo_cnt.c.previous, like_cnt.c.previous,
+        )
         .outerjoin(ripple_cnt, ripple_cnt.c.topic_id == Topic.id)
         .outerjoin(echo_cnt, echo_cnt.c.topic_id == Topic.id)
         .outerjoin(like_cnt, like_cnt.c.topic_id == Topic.id)
@@ -321,22 +339,23 @@ def list_tides(db: Session) -> list[TideOut]:
     )
     rows = db.execute(stmt).all()
     items: list[TideOut] = []
-    for topic, rc, ec, lc in rows:
-        r, e, l = rc or 0, ec or 0, lc or 0
-        heat = topic.heat_base + r * _W_RIPPLE + e * _W_ECHO + l * _W_LIKE
+    for row in rows:
+        topic, rc, ec = row[:3]
+        heat = round(topic.heat_base + sum(float(value or 0) for value in row[3:6]))
+        recent = sum(int(value or 0) for value in row[6:9])
+        previous = sum(int(value or 0) for value in row[9:12])
+        trend = "↑" if recent > previous * 1.1 else ("↓" if recent < previous * 0.9 else "→")
         items.append(
             TideOut(
                 topic=topic,
                 heat=heat,
-                ripple_count=r,
-                echo_count=e,
-                trend="",  # 下方按均值计算
+                ripple_count=rc or 0,
+                echo_count=ec or 0,
+                trend=trend,
+                recent_activity=recent,
+                previous_activity=previous,
             )
         )
-    if items:
-        avg = sum(i.heat for i in items) / len(items)
-        for i in items:
-            i.trend = "↑" if i.heat > avg * 1.1 else ("↓" if i.heat < avg * 0.9 else "→")
     items.sort(key=lambda i: i.heat, reverse=True)
     return items
 

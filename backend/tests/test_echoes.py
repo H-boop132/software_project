@@ -140,9 +140,10 @@ class EchoTests(MySQLIntegrationTestCase):
 
     def test_heat_and_mood_use_only_public_content_and_refresh_after_echo(self):
         tides = self.client.get("/api/v1/tides/hot").json()
-        self.assertEqual((tides[0]["heat"], tides[0]["ripple_count"], tides[0]["echo_count"]), (20, 1, 2))
+        self.assertEqual((tides[0]["ripple_count"], tides[0]["echo_count"]), (1, 2))
+        before = tides[0]["heat"]
         self.post()
-        self.assertEqual(self.client.get("/api/v1/tides/hot").json()[0]["heat"], 25)
+        self.assertEqual(self.client.get("/api/v1/tides/hot").json()[0]["heat"], before + 5)
         moods = self.client.get("/api/v1/moods/summary").json()
         self.assertEqual((moods[0]["count"], moods[0]["percent"]), (1, 100.0))
 

@@ -17,7 +17,7 @@ from app.core.database import get_db
 app = FastAPI(
     title=settings.app_name,
     description="捕捉每一朵思想涟漪 —— 灵感微社交平台 API",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # 跨域：允许前端 dev server 访问

@@ -113,6 +113,8 @@ export interface TideOut {
   ripple_count: number
   echo_count: number
   trend: string
+  recent_activity: number
+  previous_activity: number
 }
 
 export interface MoodOut {
