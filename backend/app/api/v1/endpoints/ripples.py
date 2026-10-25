@@ -21,6 +21,7 @@ def list_ripples(
     end: datetime | None = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """公开时间线（仅已审核通过）；支持关键词与发布时间范围筛选"""
@@ -32,6 +33,7 @@ def list_ripples(
         keyword=keyword,
         start=start,
         end=end,
+        current_user=user,
     )
 
 

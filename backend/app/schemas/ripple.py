@@ -18,6 +18,8 @@ class RippleOut(BaseModel):
     images: list[str] = []
     created_at: datetime
     like_count: int = 0
+    is_liked: bool = False
+    is_collected: bool = False
     echo_count: int = 0
 
     model_config = {"from_attributes": True}

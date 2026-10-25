@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Echo, Emotion, Like, Ripple, Topic, User
+from app.models import Collection, Echo, Emotion, Like, Ripple, Topic, User
 from app.schemas.ripple import (
     EchoOut,
     MoodOut,
@@ -35,7 +35,13 @@ def _count_subqueries():
     return like_cnt, echo_cnt
 
 
-def _to_ripple_out(ripple: Ripple, like_count: int = 0, echo_count: int = 0) -> RippleOut:
+def _to_ripple_out(
+    ripple: Ripple,
+    like_count: int = 0,
+    echo_count: int = 0,
+    is_liked: bool = False,
+    is_collected: bool = False,
+) -> RippleOut:
     return RippleOut(
         id=ripple.id,
         content=ripple.content,
@@ -46,7 +52,33 @@ def _to_ripple_out(ripple: Ripple, like_count: int = 0, echo_count: int = 0) -> 
         images=ripple.images or [],
         created_at=ripple.created_at,
         like_count=like_count,
+        is_liked=is_liked,
+        is_collected=is_collected,
         echo_count=echo_count,
+    )
+
+
+def _liked_ids(db: Session, ids: list[int], user: User | None) -> set[int]:
+    """批量读取本人状态，不为列表里的每条微澜单独查询。"""
+    if user is None or not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(Like.ripple_id).where(Like.user_id == user.id, Like.ripple_id.in_(ids))
+        ).all()
+    )
+
+
+def _collected_ids(db: Session, ids: list[int], user: User | None) -> set[int]:
+    """批量读取本人收藏状态，查询次数不随卡片数量增加。"""
+    if user is None or not ids:
+        return set()
+    return set(
+        db.scalars(
+            select(Collection.ripple_id).where(
+                Collection.user_id == user.id, Collection.ripple_id.in_(ids)
+            )
+        ).all()
     )
 
 
@@ -59,6 +91,7 @@ def list_ripples(
     keyword: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    current_user: User | None = None,
 ) -> list[RippleOut]:
     """微澜列表：默认仅公开（published）；管理端可传 status=None 查看全部状态
     支持关键词（内容模糊匹配）与发布时间范围筛选
@@ -84,7 +117,12 @@ def list_ripples(
         # 传入的 end 为日期时按当天 23:59:59 处理（含当天全天）
         stmt = stmt.where(Ripple.created_at < end + timedelta(days=1))
     rows = db.execute(stmt).all()
-    return [_to_ripple_out(r, c1 or 0, c2 or 0) for r, c1, c2 in rows]
+    liked = _liked_ids(db, [r.id for r, _, _ in rows], current_user)
+    collected = _collected_ids(db, [r.id for r, _, _ in rows], current_user)
+    return [
+        _to_ripple_out(r, c1 or 0, c2 or 0, r.id in liked, r.id in collected)
+        for r, c1, c2 in rows
+    ]
 
 
 def ripples_to_out(db: Session, ripples: list[Ripple]) -> list[RippleOut]:
@@ -125,7 +163,12 @@ def list_my_ripples(db: Session, user: User, limit: int = 50, offset: int = 0) -
         .offset(offset)
     )
     rows = db.execute(stmt).all()
-    return [_to_ripple_out(r, c1 or 0, c2 or 0) for r, c1, c2 in rows]
+    liked = _liked_ids(db, [r.id for r, _, _ in rows], user)
+    collected = _collected_ids(db, [r.id for r, _, _ in rows], user)
+    return [
+        _to_ripple_out(r, c1 or 0, c2 or 0, r.id in liked, r.id in collected)
+        for r, c1, c2 in rows
+    ]
 
 
 def create_ripple(db: Session, user: User, data: RippleCreate) -> RippleOut:
@@ -175,7 +218,11 @@ def get_ripple_detail(
         .outerjoin(echo_cnt, echo_cnt.c.root_ripple_id == Ripple.id)
         .where(Ripple.id == ripple_id)
     ).first()
-    ripple_out = _to_ripple_out(ripple, row[0] or 0, row[1] or 0)
+    liked = _liked_ids(db, [ripple_id], current_user)
+    collected = _collected_ids(db, [ripple_id], current_user)
+    ripple_out = _to_ripple_out(
+        ripple, row[0] or 0, row[1] or 0, ripple_id in liked, ripple_id in collected
+    )
 
     echoes = db.scalars(
         select(Echo)

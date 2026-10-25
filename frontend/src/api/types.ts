@@ -37,7 +37,20 @@ export interface RippleOut {
   images: string[]
   created_at: string
   like_count: number
+  is_liked: boolean
+  is_collected: boolean
   echo_count: number
+}
+
+export interface LikeOut {
+  ripple_id: number
+  is_liked: boolean
+  like_count: number
+}
+
+export interface CollectionOut {
+  ripple_id: number
+  is_collected: boolean
 }
 
 export interface EchoOut {
