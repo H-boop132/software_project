@@ -243,7 +243,7 @@ def get_ripple_detail(
     echoes = db.scalars(
         select(Echo)
         .where(Echo.root_ripple_id == ripple_id)
-        .order_by(Echo.created_at.asc())
+        .order_by(Echo.created_at.asc(), Echo.id.asc())
     ).all()
     return RippleDetail(ripple=ripple_out, echoes=_build_echo_tree(echoes))
 
@@ -294,21 +294,21 @@ def list_tides(db: Session) -> list[TideOut]:
     """话题潮汐榜：热度 = 基础热度 + 微澜×10 + 回声×5 + 点赞×2，趋势与均值对比"""
     ripple_cnt = (
         select(Ripple.topic_id, func.count(Ripple.id).label("cnt"))
-        .where(Ripple.topic_id.is_not(None))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     echo_cnt = (
         select(Ripple.topic_id, func.count(Echo.id).label("cnt"))
         .join(Echo, Echo.root_ripple_id == Ripple.id)
-        .where(Ripple.topic_id.is_not(None))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
     like_cnt = (
         select(Ripple.topic_id, func.count(Like.id).label("cnt"))
         .join(Like, Like.ripple_id == Ripple.id)
-        .where(Ripple.topic_id.is_not(None))
+        .where(Ripple.topic_id.is_not(None), Ripple.status == "published")
         .group_by(Ripple.topic_id)
         .subquery()
     )
@@ -346,6 +346,7 @@ def mood_summary(db: Session) -> list[MoodOut]:
     rows = db.execute(
         select(Emotion, func.count(Ripple.id).label("cnt"))
         .join(Ripple, Ripple.emotion_code == Emotion.code)
+        .where(Ripple.status == "published")
         .group_by(Emotion.code, Emotion.name, Emotion.color)
         .order_by(func.count(Ripple.id).desc())
     ).all()

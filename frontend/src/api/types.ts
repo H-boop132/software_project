@@ -91,6 +91,17 @@ export interface EchoOut {
   children: EchoOut[]
 }
 
+export interface EchoPayload {
+  content: string
+  parent_echo_id?: number | null
+  emotion_code?: string | null
+}
+
+export interface EchoDeleteOut {
+  ripple_id: number
+  echo_count: number
+}
+
 export interface RippleDetail {
   ripple: RippleOut
   echoes: EchoOut[]

@@ -1,15 +1,103 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getRippleDetail } from '@/api/ripples'
-import type { CollectionOut, LikeOut, RippleDetail } from '@/api/types'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { InputInstance } from 'element-plus'
+import { createEcho, deleteEcho, getRippleDetail } from '@/api/ripples'
+import type { CollectionOut, EchoOut, LikeOut, RippleDetail } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
 import CollectionButton from '@/components/CollectionButton.vue'
+import EchoNode from '@/components/EchoNode.vue'
+import EchoTreeMap from '@/components/EchoTreeMap.vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const detail = ref<RippleDetail | null>(null)
 const loading = ref(false)
+const failed = ref(false)
+const store = useUserStore()
+const posting = ref(false)
+const deleting = ref(false)
+const echoView = ref('discussion')
+const selectedEcho = ref<EchoOut | null>(null)
+const replyTarget = ref<EchoOut | null>(null)
+const content = ref('')
+const emotion = ref<string | null>(null)
+const composer = ref<HTMLElement | null>(null)
+const input = ref<InputInstance>()
+const interactive = computed(() => detail.value?.ripple.status === 'published' && !posting.value && !deleting.value && !loading.value)
+const canDeleteSelected = computed(() => selectedEcho.value && (selectedEcho.value.user.id === store.user?.id || store.user?.role === 'admin'))
+let requestVersion = 0
+
+function depthOf(id: number, nodes = detail.value?.echoes || [], level = 1): number {
+  for (const node of nodes) {
+    if (node.id === id) return level
+    const depth = depthOf(id, node.children, level + 1)
+    if (depth) return depth
+  }
+  return 0
+}
+
+async function loadDetail() {
+  const id = Number(route.params.id)
+  const version = ++requestVersion
+  loading.value = true
+  failed.value = false
+  try {
+    const result = await getRippleDetail(id)
+    if (version === requestVersion) detail.value = result
+  } catch {
+    if (version === requestVersion) failed.value = true
+  } finally {
+    if (version === requestVersion) loading.value = false
+  }
+}
+
+async function reply(echo: EchoOut | null) {
+  replyTarget.value = echo
+  await nextTick()
+  composer.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  input.value?.focus()
+}
+
+async function submitEcho() {
+  if (!interactive.value) return
+  const text = content.value.trim()
+  if (!text) { ElMessage.warning('回声内容不能为空'); return }
+  const id = Number(route.params.id)
+  posting.value = true
+  try {
+    await createEcho(id, { content: text, parent_echo_id: replyTarget.value?.id ?? null, emotion_code: emotion.value || null })
+    if (Number(route.params.id) !== id) return
+    content.value = ''
+    emotion.value = null
+    replyTarget.value = null
+    selectedEcho.value = null
+    await loadDetail()
+    ElMessage.success('回声已发出')
+  } catch { /* 全局提示；保留未提交成功的内容 */ }
+  finally { if (Number(route.params.id) === id) posting.value = false }
+}
+
+async function removeEcho(echo: EchoOut) {
+  try {
+    await ElMessageBox.confirm('删除这条回声及其所有回复？此操作无法撤销。', '删除回声', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch { return }
+  const id = Number(route.params.id)
+  deleting.value = true
+  try {
+    await deleteEcho(echo.id)
+    if (Number(route.params.id) !== id) return
+    replyTarget.value = null
+    selectedEcho.value = null
+    await loadDetail()
+    ElMessage.success('回声及其回复已删除')
+  } catch { /* 全局提示 */ }
+  finally { if (Number(route.params.id) === id) deleting.value = false }
+}
 
 function updateLike(state: LikeOut) {
   if (detail.value && detail.value.ripple.id === state.ripple_id) {
@@ -44,22 +132,27 @@ function formatTime(iso: string): string {
   return `${d.getFullYear()}-${m}-${day}`
 }
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    detail.value = await getRippleDetail(Number(route.params.id))
-  } finally {
-    loading.value = false
-  }
-})
+watch(() => route.params.id, () => {
+  detail.value = null
+  replyTarget.value = null
+  selectedEcho.value = null
+  content.value = ''
+  emotion.value = null
+  posting.value = false
+  deleting.value = false
+  viewer.visible = false
+  void loadDetail()
+}, { immediate: true })
+onBeforeUnmount(() => { requestVersion++ })
 </script>
 
 <template>
   <div v-loading="loading">
+    <div v-if="failed" class="empty-tip"><p>微澜不存在、不可查看或加载失败</p><el-button @click="loadDetail">重新加载</el-button></div>
     <template v-if="detail">
       <div class="card">
         <div class="rc-head">
-          <span class="rc-nickname">{{ detail.ripple.user.nickname }}</span>
+          <router-link :to="`/users/${detail.ripple.user.id}`" class="rc-nickname">{{ detail.ripple.user.nickname }}</router-link>
           <span class="rc-time">{{ formatTime(detail.ripple.created_at) }}</span>
           <span
             v-if="detail.ripple.emotion"
@@ -95,46 +188,50 @@ onMounted(async () => {
         @close="viewer.visible = false"
       />
 
-      <h3 class="echo-title">回声 · 涟漪树</h3>
+      <div class="echo-toolbar">
+        <h3>回声 · 涟漪树 <small>{{ detail.ripple.echo_count }}</small></h3>
+        <el-radio-group v-model="echoView" aria-label="回声展示方式">
+          <el-radio-button value="discussion">讨论列表</el-radio-button>
+          <el-radio-button value="tree">涟漪树</el-radio-button>
+        </el-radio-group>
+        <el-button :disabled="loading || posting || deleting" @click="selectedEcho = null; loadDetail()">刷新回声</el-button>
+      </div>
       <div v-if="detail.echoes.length === 0" class="empty-tip">
         还没有回声，等待第一个共鸣者。
       </div>
 
-      <!-- 递归渲染涟漪树 -->
-      <EchoNode v-for="e in detail.echoes" :key="e.id" :echo="e" :depth="0" />
+      <ul v-if="echoView === 'discussion'" class="echo-list" aria-label="回声讨论">
+        <EchoNode v-for="echo in detail.echoes" :key="echo.id" :echo="echo" :interactive="interactive" @reply="reply" @remove="removeEcho" />
+      </ul>
+      <template v-else>
+        <EchoTreeMap :ripple="detail.ripple" :echoes="detail.echoes" :selected-id="selectedEcho?.id ?? null" @select="selectedEcho = $event" />
+        <article v-if="selectedEcho" class="card selected-echo">
+          <router-link :to="`/users/${selectedEcho.user.id}`">{{ selectedEcho.user.nickname }}</router-link>
+          <p>{{ selectedEcho.content }}</p>
+          <el-button type="primary" :disabled="!interactive || depthOf(selectedEcho.id) >= 8" @click="reply(selectedEcho)">回复此回声</el-button>
+          <el-button v-if="canDeleteSelected" type="danger" plain :disabled="!interactive" @click="removeEcho(selectedEcho)">删除此回声</el-button>
+        </article>
+      </template>
+
+      <section v-if="detail.ripple.status === 'published'" ref="composer" class="card echo-composer" aria-label="发表回声">
+        <div class="reply-heading">
+          <strong>{{ replyTarget ? `回复 ${replyTarget.user.nickname}` : '回应这条微澜' }}</strong>
+          <el-button v-if="replyTarget" link @click="replyTarget = null">取消回复</el-button>
+        </div>
+        <p v-if="replyTarget" class="reply-preview">{{ replyTarget.content }}</p>
+        <el-input ref="input" v-model="content" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="写下你的回声，最多 200 字…" :disabled="posting || deleting" aria-label="回声内容" />
+        <div class="composer-actions">
+          <el-select v-model="emotion" clearable placeholder="选择情绪（可选）" aria-label="回声情绪" style="width: 190px" :disabled="posting">
+            <el-option v-for="item in [{ value: 'joy', label: '喜悦' }, { value: 'anger', label: '愤怒' }, { value: 'sorrow', label: '悲伤' }, { value: 'fear', label: '恐惧' }, { value: 'think', label: '思考' }, { value: 'calm', label: '平静' }]" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <el-button type="primary" :loading="posting" :disabled="!interactive || !content.trim()" @click="submitEcho">{{ replyTarget ? '发送回复' : '发表回声' }}</el-button>
+        </div>
+        <small>支持最多 8 层回复，点击作者昵称可进入主页。</small>
+      </section>
+      <p v-else class="empty-tip">当前微澜未公开，回声仅供查看。</p>
     </template>
   </div>
 </template>
-
-<script lang="ts">
-import { defineComponent } from 'vue'
-import type { PropType } from 'vue'
-import type { EchoOut } from '@/api/types'
-
-const EchoNode = defineComponent({
-  name: 'EchoNode',
-  props: {
-    echo: { type: Object as PropType<EchoOut>, required: true },
-    depth: { type: Number, default: 0 },
-  },
-  template: `
-    <div class="echo-node" :style="{ marginLeft: depth + 'em' }">
-      <div class="echo-body">
-        <span class="echo-user">{{ echo.user.nickname }}</span>
-        <span class="echo-text">{{ echo.content }}</span>
-        <span v-if="echo.emotion" class="echo-emotion" :style="{ color: echo.emotion.color }">
-          ● {{ echo.emotion.name }}
-        </span>
-      </div>
-      <EchoNode v-for="c in echo.children" :key="c.id" :echo="c" :depth="depth + 1" />
-    </div>
-  `,
-})
-
-export default {
-  components: { EchoNode },
-}
-</script>
 
 <style scoped>
 .rc-head {
@@ -146,6 +243,8 @@ export default {
 
 .rc-nickname {
   font-weight: 600;
+  color: #37474f;
+  text-decoration: none;
 }
 
 .rc-time {
@@ -194,41 +293,16 @@ export default {
   color: var(--wl-primary);
 }
 
-.echo-title {
-  margin: 20px 0 12px;
-  font-size: 16px;
-}
-
-.echo-node {
-  border-left: 2px solid var(--wl-border);
-  padding: 6px 0 6px 12px;
-  margin-bottom: 4px;
-}
-
-.echo-body {
-  background: #fff;
-  border: 1px solid var(--wl-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.echo-user {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--wl-primary);
-  white-space: nowrap;
-}
-
-.echo-text {
-  font-size: 14px;
-  flex: 1;
-}
-
-.echo-emotion {
-  font-size: 12px;
-  white-space: nowrap;
-}
+.echo-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 24px 0 12px; }
+.echo-toolbar h3 { font-size: 17px; margin: 0 auto 0 0; }
+.echo-toolbar small { color: #78909c; }
+.echo-list { padding: 0; list-style: none; }
+.echo-composer { margin-top: 20px; }
+.reply-heading, .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.composer-actions { margin-top: 14px; }
+.reply-preview { padding: 10px; border-left: 3px solid #9bc8d2; background: #f5fafb; color: #607d8b; overflow-wrap: anywhere; }
+.echo-composer small { color: #90a4ae; }
+.selected-echo { margin-top: 12px; }
+.selected-echo a { color: var(--wl-primary); text-decoration: none; }
+.selected-echo p { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

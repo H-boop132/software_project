@@ -1,14 +1,14 @@
 """微澜接口：时间线 / 发布 / 我的微澜 / 详情（含回声树）/ 修改重提"""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user, get_optional_user
 from app.models.user import User
-from app.schemas.ripple import RippleCreate, RippleDetail, RippleOut, RippleUpdate
-from app.services import ripple_service
+from app.schemas.ripple import EchoCreate, EchoOut, RippleCreate, RippleDetail, RippleOut, RippleUpdate
+from app.services import echo_service, ripple_service
 
 router = APIRouter()
 
@@ -89,3 +89,12 @@ def update_ripple(
 ):
     """修改被封禁的微澜并重新提交审核（banned → pending）"""
     return ripple_service.update_ripple(db, user, ripple_id, data)
+
+
+@router.post("/{ripple_id}/echoes", response_model=EchoOut, status_code=status.HTTP_201_CREATED)
+def create_echo(
+    data: EchoCreate, ripple_id: int = Path(gt=0),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """发表回声；parent_echo_id 指向同一微澜内的回声时表示回复。"""
+    return echo_service.create_echo(db, user, ripple_id, data)

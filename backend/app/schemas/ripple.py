@@ -52,6 +52,22 @@ class RippleUpdate(BaseModel):
     _images = field_validator("images")(_validate_images)
 
 
+class EchoCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=200)
+    parent_echo_id: int | None = Field(default=None, gt=0)
+    emotion_code: str | None = None
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def strip_content(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class EchoDeleteOut(BaseModel):
+    ripple_id: int
+    echo_count: int
+
+
 class EchoOut(BaseModel):
     """回声节点（含子回声，构成涟漪树）"""
     id: int
@@ -60,14 +76,14 @@ class EchoOut(BaseModel):
     user: UserOut
     parent_echo_id: int | None = None
     created_at: datetime
-    children: list["EchoOut"] = []
+    children: list["EchoOut"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
 
 class RippleDetail(BaseModel):
     ripple: RippleOut
-    echoes: list[EchoOut] = []
+    echoes: list[EchoOut] = Field(default_factory=list)
 
 
 class TideOut(BaseModel):
