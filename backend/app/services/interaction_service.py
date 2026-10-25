@@ -4,7 +4,8 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Collection, Like, Ripple, User
-from app.schemas.interaction import CollectionOut, LikeOut
+from app.schemas.interaction import CollectionOut, CollectionPage, LikeOut
+from app.services.ripple_service import ripples_to_out
 
 
 def _lock_public_ripple(db: Session, ripple_id: int) -> None:
@@ -72,3 +73,27 @@ def set_collection(
         )
     )
     return CollectionOut(ripple_id=ripple_id, is_collected=own_id is not None)
+
+
+def list_collections(
+    db: Session, user: User, limit: int = 20, offset: int = 0
+) -> CollectionPage:
+    """仅返回本人的公开收藏；数量与分页使用相同可见性条件。"""
+    filters = (Collection.user_id == user.id, Ripple.status == "published")
+    total = db.scalar(
+        select(func.count(Collection.id))
+        .join(Ripple, Ripple.id == Collection.ripple_id)
+        .where(*filters)
+    ) or 0
+    ripples = db.scalars(
+        select(Ripple)
+        .join(Collection, Collection.ripple_id == Ripple.id)
+        .where(*filters)
+        .order_by(Collection.created_at.desc(), Collection.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return CollectionPage(
+        items=ripples_to_out(db, list(ripples), current_user=user),
+        total=total, limit=limit, offset=offset,
+    )

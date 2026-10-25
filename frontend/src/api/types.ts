@@ -53,6 +53,13 @@ export interface CollectionOut {
   is_collected: boolean
 }
 
+export interface CollectionPage {
+  items: RippleOut[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface EchoOut {
   id: number
   content: string

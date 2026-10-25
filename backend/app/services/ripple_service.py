@@ -125,7 +125,9 @@ def list_ripples(
     ]
 
 
-def ripples_to_out(db: Session, ripples: list[Ripple]) -> list[RippleOut]:
+def ripples_to_out(
+    db: Session, ripples: list[Ripple], current_user: User | None = None
+) -> list[RippleOut]:
     """把任意 Ripple 集合转为输出模型（含点赞/回声计数，供审核队列等使用）"""
     if not ripples:
         return []
@@ -145,8 +147,14 @@ def ripples_to_out(db: Session, ripples: list[Ripple]) -> list[RippleOut]:
             )
         ).all()
     )
+    liked = _liked_ids(db, ids, current_user)
+    collected = _collected_ids(db, ids, current_user)
     return [
-        _to_ripple_out(r, like_map.get(r.id, 0), echo_map.get(r.id, 0)) for r in ripples
+        _to_ripple_out(
+            r, like_map.get(r.id, 0), echo_map.get(r.id, 0),
+            r.id in liked, r.id in collected,
+        )
+        for r in ripples
     ]
 
 
