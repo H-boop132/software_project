@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import type { LikeOut, RippleOut } from '@/api/types'
+import type { CollectionOut, LikeOut, RippleOut } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
+import CollectionButton from '@/components/CollectionButton.vue'
 
 defineProps<{ ripple: RippleOut }>()
-const emit = defineEmits<{ 'like-updated': [state: LikeOut] }>()
+const emit = defineEmits<{
+  'like-updated': [state: LikeOut]
+  'collection-updated': [state: CollectionOut]
+}>()
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -113,6 +117,7 @@ onMounted(updateArrows)
       <span v-if="ripple.topic" class="rc-topic"># {{ ripple.topic.name }}</span>
       <span class="rc-stat">💬 {{ ripple.echo_count }}</span>
       <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
+      <CollectionButton :ripple="ripple" @updated="emit('collection-updated', $event)" />
     </div>
   </div>
 </template>
@@ -216,6 +221,7 @@ onMounted(updateArrows)
 
 .rc-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   font-size: 13px;
