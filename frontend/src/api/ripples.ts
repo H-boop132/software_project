@@ -15,6 +15,9 @@ export interface RippleListParams {
   end?: string
   limit?: number
   offset?: number
+  emotion_code?: string
+  has_images?: boolean
+  sort?: 'latest' | 'discussed' | 'liked'
 }
 
 export function listRipples(params: RippleListParams = {}) {

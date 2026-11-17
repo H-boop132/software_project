@@ -1,5 +1,6 @@
 """微澜接口：时间线 / 发布 / 我的微澜 / 详情（含回声树）/ 修改重提"""
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy.orm import Session
@@ -19,6 +20,9 @@ def list_ripples(
     keyword: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    emotion_code: str | None = Query(None, max_length=20),
+    has_images: bool = False,
+    sort: Literal["latest", "discussed", "liked"] = "latest",
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_user),
@@ -33,6 +37,9 @@ def list_ripples(
         keyword=keyword,
         start=start,
         end=end,
+        emotion_code=emotion_code,
+        has_images=has_images,
+        sort=sort,
         current_user=user,
     )
 

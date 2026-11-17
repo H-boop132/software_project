@@ -1,5 +1,6 @@
 """微澜核心业务：时间线 / 发布 / 详情 / 潮汐 / 气象"""
 from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, case, func, select, text
@@ -94,6 +95,9 @@ def list_ripples(
     current_user: User | None = None,
     author_id: int | None = None,
     following_user_id: int | None = None,
+    emotion_code: str | None = None,
+    has_images: bool = False,
+    sort: Literal["latest", "discussed", "liked"] = "latest",
 ) -> list[RippleOut]:
     """微澜列表：默认仅公开（published）；管理端可传 status=None 查看全部状态
     支持关键词（内容模糊匹配）与发布时间范围筛选
@@ -103,10 +107,14 @@ def list_ripples(
         select(Ripple, like_cnt.c.cnt, echo_cnt.c.cnt)
         .outerjoin(like_cnt, like_cnt.c.ripple_id == Ripple.id)
         .outerjoin(echo_cnt, echo_cnt.c.root_ripple_id == Ripple.id)
-        .order_by(Ripple.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
+    if sort == "discussed":
+        stmt = stmt.order_by(func.coalesce(echo_cnt.c.cnt, 0).desc())
+    elif sort == "liked":
+        stmt = stmt.order_by(func.coalesce(like_cnt.c.cnt, 0).desc())
+    stmt = stmt.order_by(Ripple.created_at.desc(), Ripple.id.desc())
     if status is not None:
         stmt = stmt.where(Ripple.status == status)
     if author_id is not None:
@@ -117,6 +125,10 @@ def list_ripples(
         ))
     if topic_id is not None:
         stmt = stmt.where(Ripple.topic_id == topic_id)
+    if emotion_code is not None:
+        stmt = stmt.where(Ripple.emotion_code == emotion_code)
+    if has_images:
+        stmt = stmt.where(func.json_type(Ripple.images) == "ARRAY", func.json_length(Ripple.images) > 0)
     if keyword:
         stmt = stmt.where(Ripple.content.like(f"%{keyword}%"))
     if start is not None:
