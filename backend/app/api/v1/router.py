@@ -1,7 +1,7 @@
 """v1 路由汇总"""
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin, auth, echoes, interactions, moods, notifications, ripples, tides, upload, users
+from app.api.v1.endpoints import admin, auth, echoes, interactions, moods, notifications, ripples, tides, topics, upload, users
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["认证"])
@@ -11,6 +11,7 @@ api_router.include_router(echoes.router, prefix="/echoes", tags=["回声"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["站内消息"])
 api_router.include_router(interactions.router, prefix="/interactions", tags=["互动"])
 api_router.include_router(tides.router, prefix="/tides", tags=["潮汐"])
+api_router.include_router(topics.router, prefix="/topics", tags=["话题"])
 api_router.include_router(moods.router, prefix="/moods", tags=["气象"])
 api_router.include_router(upload.router, prefix="/upload", tags=["上传"])
 api_router.include_router(admin.router, prefix="/admin", tags=["管理"])

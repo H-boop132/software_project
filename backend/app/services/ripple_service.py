@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session
 
-from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, Topic, User
+from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, Topic, TopicSubscription, User
 from app.schemas.ripple import (
     EchoOut,
     MoodOut,
@@ -98,6 +98,7 @@ def list_ripples(
     emotion_code: str | None = None,
     has_images: bool = False,
     sort: Literal["latest", "discussed", "liked"] = "latest",
+    subscribed_user_id: int | None = None,
 ) -> list[RippleOut]:
     """微澜列表：默认仅公开（published）；管理端可传 status=None 查看全部状态
     支持关键词（内容模糊匹配）与发布时间范围筛选
@@ -122,6 +123,10 @@ def list_ripples(
     if following_user_id is not None:
         stmt = stmt.where(Ripple.user_id.in_(
             select(Follow.followee_id).where(Follow.follower_id == following_user_id)
+        ))
+    if subscribed_user_id is not None:
+        stmt = stmt.where(Ripple.topic_id.in_(
+            select(TopicSubscription.topic_id).where(TopicSubscription.user_id == subscribed_user_id)
         ))
     if topic_id is not None:
         stmt = stmt.where(Ripple.topic_id == topic_id)
