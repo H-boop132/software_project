@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import type { RippleOut } from '@/api/types'
+import type { LikeOut, RippleOut } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
+import LikeButton from '@/components/LikeButton.vue'
 
 defineProps<{ ripple: RippleOut }>()
+const emit = defineEmits<{ 'like-updated': [state: LikeOut] }>()
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -110,7 +112,7 @@ onMounted(updateArrows)
     <div class="rc-foot">
       <span v-if="ripple.topic" class="rc-topic"># {{ ripple.topic.name }}</span>
       <span class="rc-stat">💬 {{ ripple.echo_count }}</span>
-      <span class="rc-stat">❤ {{ ripple.like_count }}</span>
+      <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
     </div>
   </div>
 </template>
@@ -214,6 +216,7 @@ onMounted(updateArrows)
 
 .rc-foot {
   display: flex;
+  align-items: center;
   gap: 14px;
   font-size: 13px;
   color: #78909c;
