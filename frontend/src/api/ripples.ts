@@ -1,5 +1,5 @@
 import request from './request'
-import type { EchoDeleteOut, EchoOut, EchoPayload, MoodOut, RippleDetail, RippleOut, TideOut } from './types'
+import type { EchoDeleteOut, EchoOut, EchoPayload, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
 
 export interface RipplePayload {
   content: string
@@ -36,13 +36,16 @@ export function createRipple(data: RipplePayload) {
   return request.post<unknown, RippleOut>('/ripples', data)
 }
 
-export function fetchMyRipples(params: { limit?: number; offset?: number } = {}) {
-  return request.get<unknown, RippleOut[]>('/ripples/mine', { params })
+export function fetchMyRipples(params: { limit?: number; offset?: number; keyword?: string; status?: MyRippleStatus } = {}) {
+  return request.get<unknown, MyRippleOut[]>('/ripples/mine', { params })
 }
 
-/** 修改被封禁的微澜并重新提交审核 */
-export function updateRipple(id: number, data: RipplePayload) {
+export function updateRipple(id: number, data: RipplePayload & { expected_status?: 'published' | 'banned' }) {
   return request.put<unknown, RippleOut>(`/ripples/${id}`, data)
+}
+
+export function deleteMyRipple(id: number) {
+  return request.delete<unknown, void>(`/ripples/${id}`)
 }
 
 export function getRippleDetail(id: number) {

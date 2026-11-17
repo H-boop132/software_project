@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
-import { fetchMyRipples, updateRipple } from '@/api/ripples'
-import type { LikeOut, RippleOut, UserProfile } from '@/api/types'
+import { deleteMyRipple, fetchMyRipples, updateRipple } from '@/api/ripples'
+import type { LikeOut, MyRippleOut, MyRippleStatus, RippleOut, UserProfile } from '@/api/types'
 import { fetchUserProfile } from '@/api/users'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
@@ -26,9 +26,26 @@ watch(() => route.query.tab, (tab) => {
   activeTab.value = tab === 'collections' ? 'collections' : 'ripples'
 })
 
-const myRipples = ref<RippleOut[]>([])
-const loading = ref(false)
+const myRipples = ref<MyRippleOut[]>([])
+const loading = ref(true)
+const failed = ref(false)
 const social = ref<UserProfile | null>(null)
+const filter = ref<MyRippleStatus | ''>('')
+const keyword = ref('')
+const submittedKeyword = ref('')
+const page = ref(1)
+const pageSize = 10
+const hasNext = ref(false)
+let listVersion = 0
+
+const filters: { value: MyRippleStatus | ''; label: string }[] = [
+  { value: '', label: '全部' },
+  { value: 'published', label: '已发布' },
+  { value: 'pending', label: '审核中' },
+  { value: 'banned', label: '需修改' },
+]
+
+const reviewLabels = { ban: '管理员已下架', reject: '审核未通过', approve: '审核通过' }
 
 function updateLike(state: LikeOut) {
   const ripple = myRipples.value.find((item) => item.id === state.ripple_id)
@@ -51,13 +68,14 @@ function openViewer(urls: string[], index: number) {
   viewer.visible = true
 }
 
-/* ---------------- 编辑被封禁微澜 ---------------- */
 const editDialog = reactive({
   visible: false,
-  target: null as RippleOut | null,
+  target: null as MyRippleOut | null,
   content: '',
 })
 const submitting = ref(false)
+const deleting = ref<number | null>(null)
+const resubmitting = computed(() => editDialog.target?.status === 'banned')
 
 function statusTag(row: RippleOut) {
   const map: Record<string, { type: 'success' | 'danger' | 'warning'; text: string }> = {
@@ -70,15 +88,41 @@ function statusTag(row: RippleOut) {
 
 async function loadMyRipples() {
   if (!isLoggedIn.value) return
+  const version = ++listVersion
   loading.value = true
+  failed.value = false
   try {
-    myRipples.value = await fetchMyRipples({ limit: 50 })
+    const items = await fetchMyRipples({
+      limit: pageSize + 1,
+      offset: (page.value - 1) * pageSize,
+      status: filter.value || undefined,
+      keyword: submittedKeyword.value || undefined,
+    })
+    if (version !== listVersion) return
+    if (!items.length && page.value > 1) {
+      page.value--
+      return
+    }
+    hasNext.value = items.length > pageSize
+    myRipples.value = items.slice(0, pageSize)
+  } catch {
+    if (version === listVersion) failed.value = true
   } finally {
-    loading.value = false
+    if (version === listVersion) loading.value = false
   }
 }
 
-function openEdit(r: RippleOut) {
+function search() {
+  submittedKeyword.value = keyword.value.trim()
+  page.value = 1
+}
+
+function changeStatus(status: MyRippleStatus | '') {
+  filter.value = status
+  page.value = 1
+}
+
+function openEdit(r: MyRippleOut) {
   editDialog.visible = true
   editDialog.target = r
   editDialog.content = r.content
@@ -86,7 +130,7 @@ function openEdit(r: RippleOut) {
 
 async function submitEdit() {
   const target = editDialog.target
-  if (!target) return
+  if (!target || submitting.value || (target.status !== 'published' && target.status !== 'banned')) return
   if (!editDialog.content.trim()) {
     ElMessage.warning('内容不能为空')
     return
@@ -95,17 +139,39 @@ async function submitEdit() {
   try {
     const updated = await updateRipple(target.id, {
       content: editDialog.content.trim(),
-      images: target.images || [],
+      expected_status: target.status,
     })
-    ElMessage.success('已重新提交审核，等待管理员通过后恢复公开')
+    ElMessage.success(updated.status === 'pending' ? '已重新提交审核' : '微澜已更新')
     editDialog.visible = false
-    // 局部更新状态
-    const idx = myRipples.value.findIndex((r) => r.id === target.id)
-    if (idx >= 0) myRipples.value[idx] = updated
+    await loadMyRipples()
+  } catch (error) {
+    if ((error as { response?: { status?: number } }).response?.status === 409) {
+      editDialog.visible = false
+      await loadMyRipples()
+    }
   } finally {
     submitting.value = false
   }
 }
+
+async function removeRipple(ripple: MyRippleOut) {
+  if (deleting.value !== null) return
+  deleting.value = ripple.id
+  try {
+    await ElMessageBox.confirm(
+      '删除后，这条微澜和它的回声将退出社区展示，无法从个人主页恢复。',
+      '删除微澜',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+    await deleteMyRipple(ripple.id)
+    ElMessage.success('微澜已删除')
+    await loadMyRipples()
+  } catch { /* 取消或请求失败时保留当前列表。 */ }
+  finally { deleting.value = null }
+}
+
+watch([filter, submittedKeyword, page], loadMyRipples)
+onBeforeUnmount(() => { listVersion++ })
 
 onMounted(async () => {
   await userStore.refreshMe()
@@ -143,8 +209,23 @@ onMounted(async () => {
     <template v-if="isLoggedIn && user">
       <el-tabs v-model="activeTab" class="profile-tabs" @tab-change="changeTab">
         <el-tab-pane label="我的微澜" name="ripples">
-          <div v-loading="loading">
-            <div v-for="r in myRipples" :key="r.id" class="card my-ripple">
+          <div class="card creator-controls">
+            <form class="creator-search" role="search" @submit.prevent="search">
+              <input v-model="keyword" aria-label="搜索我的微澜" placeholder="搜索我的微澜" type="search" maxlength="100" @search="!keyword && search()" />
+              <button type="submit">搜索</button>
+            </form>
+            <div class="creator-filters" role="group" aria-label="按发布状态筛选">
+              <button v-for="item in filters" :key="item.value" type="button"
+                :aria-pressed="filter === item.value" @click="changeStatus(item.value)">{{ item.label }}</button>
+            </div>
+          </div>
+          <div :aria-busy="loading">
+            <div v-if="loading" role="status" class="empty-tip">正在读取我的微澜…</div>
+            <div v-else-if="failed" class="empty-tip">
+              微澜加载失败。<el-button text @click="loadMyRipples">重试</el-button>
+            </div>
+            <template v-else>
+            <article v-for="r in myRipples" :key="r.id" class="card my-ripple">
               <div class="mr-head">
                 <el-tag :type="statusTag(r).type" size="small">{{ statusTag(r).text }}</el-tag>
                 <span class="mr-time">{{ new Date(r.created_at).toLocaleString('zh-CN') }}</span>
@@ -161,19 +242,30 @@ onMounted(async () => {
                   @click="openViewer(r.images, i)"
                 />
               </div>
-              <div v-if="r.status === 'banned'" class="mr-action">
-                <el-button type="primary" size="small" @click="openEdit(r)">
-                  修改并重新提交审核
+              <p v-if="r.status === 'pending'" class="mr-hint">新版内容正在审核，审核通过后会重新公开。</p>
+              <p v-else-if="r.latest_review" class="mr-review">
+                <strong>{{ reviewLabels[r.latest_review.action] }}</strong>
+                <span v-if="r.latest_review.reason">{{ r.latest_review.reason }}</span>
+              </p>
+              <div class="mr-action">
+                <router-link :to="{ name: 'ripple-detail', params: { id: r.id } }">查看详情</router-link>
+                <el-button v-if="r.status === 'published' || r.status === 'banned'" type="primary" plain size="small"
+                  :disabled="deleting !== null" @click="openEdit(r)">
+                  {{ r.status === 'banned' ? '修改并重新提交审核' : '编辑正文' }}
                 </el-button>
-                <span class="mr-hint">修改后需管理员审核通过才会重新公开</span>
+                <el-button type="danger" text size="small" :loading="deleting === r.id"
+                  :disabled="deleting !== null" @click="removeRipple(r)">删除微澜</el-button>
               </div>
-              <div v-else-if="r.status === 'pending'" class="mr-hint">
-                内容正在审核中，请耐心等待
-              </div>
+            </article>
+            <div v-if="!myRipples.length" class="empty-tip">
+              {{ filter || submittedKeyword ? '没有符合当前筛选的微澜。' : '你还没有发布微澜。' }}
             </div>
-            <div v-if="!loading && myRipples.length === 0" class="empty-tip">
-              还没有发过微澜，去记录第一朵涟漪吧
-            </div>
+            <nav v-if="page > 1 || hasNext" class="creator-pagination" aria-label="我的微澜分页">
+              <button type="button" :disabled="page === 1" @click="page--">上一页</button>
+              <span>第 {{ page }} 页</span>
+              <button type="button" :disabled="!hasNext" @click="page++">下一页</button>
+            </nav>
+            </template>
           </div>
         </el-tab-pane>
         <el-tab-pane label="我的收藏" name="collections">
@@ -190,19 +282,23 @@ onMounted(async () => {
     />
 
     <!-- 编辑弹窗 -->
-    <el-dialog v-model="editDialog.visible" title="修改并重新提交审核" width="480px">
+    <el-dialog v-model="editDialog.visible" :title="resubmitting ? '修改并重新提交审核' : '编辑正文'"
+      width="min(480px, calc(100% - 32px))" :close-on-click-modal="!submitting" :close-on-press-escape="!submitting"
+      :show-close="!submitting">
       <el-input
         v-model="editDialog.content"
         type="textarea"
         :rows="4"
         maxlength="200"
         show-word-limit
+        aria-label="微澜正文"
+        :disabled="submitting"
         placeholder="修改后的内容"
       />
       <template #footer>
-        <el-button @click="editDialog.visible = false">取消</el-button>
+        <el-button :disabled="submitting" @click="editDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitEdit">
-          提交审核
+          {{ resubmitting ? '提交审核' : '保存修改' }}
         </el-button>
       </template>
     </el-dialog>
@@ -261,6 +357,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 8px;
 }
 
@@ -276,6 +373,8 @@ onMounted(async () => {
 }
 
 .mr-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   margin: 0 0 8px;
   font-size: 14px;
   line-height: 1.7;
@@ -302,10 +401,33 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
-.mr-hint {
-  font-size: 12px;
-  color: #90a4ae;
+.mr-action a { color: var(--wl-primary); font-size: 13px; }
+.mr-action :deep(.el-button + .el-button) { margin-left: 0; }
+.mr-hint, .mr-review { font-size: 13px; color: var(--wl-muted); margin: 8px 0 12px; }
+.mr-review span { margin-left: 8px; overflow-wrap: anywhere; }
+.creator-controls, .creator-filters, .creator-search, .creator-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+.creator-controls { justify-content: space-between; }
+.creator-search { flex-wrap: nowrap; max-width: 100%; }
+.creator-search input, .creator-controls button, .creator-pagination button {
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--wl-ink);
+  background: white;
+  font: inherit;
+  font-size: 13px;
+}
+.creator-search input { min-width: 0; }
+.creator-controls button, .creator-pagination button { cursor: pointer; white-space: nowrap; }
+.creator-controls button[aria-pressed='true'] { background: #e1efe6; color: var(--wl-primary); }
+.creator-pagination { justify-content: center; font-size: 13px; }
+.creator-pagination button:disabled { color: var(--wl-muted); cursor: default; }
 </style>
