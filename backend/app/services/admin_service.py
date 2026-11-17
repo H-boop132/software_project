@@ -10,9 +10,9 @@ def get_stats(db: Session) -> dict:
     """平台概览统计"""
     return {
         "users": db.scalar(select(func.count(User.id))) or 0,
-        "ripples": db.scalar(select(func.count(Ripple.id))) or 0,
-        "echoes": db.scalar(select(func.count(Echo.id))) or 0,
-        "likes": db.scalar(select(func.count(Like.id))) or 0,
+        "ripples": db.scalar(select(func.count(Ripple.id)).where(Ripple.status != "deleted")) or 0,
+        "echoes": db.scalar(select(func.count(Echo.id)).join(Ripple).where(Ripple.status != "deleted")) or 0,
+        "likes": db.scalar(select(func.count(Like.id)).join(Ripple).where(Ripple.status != "deleted")) or 0,
         "topics": db.scalar(select(func.count(Topic.id))) or 0,
     }
 

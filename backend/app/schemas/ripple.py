@@ -1,5 +1,6 @@
 """微澜 / 回声 / 潮汐 / 情绪气象响应模型"""
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,6 +26,18 @@ class RippleOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AuthorReviewOut(BaseModel):
+    action: Literal["ban", "approve", "reject"]
+    reason: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MyRippleOut(RippleOut):
+    latest_review: AuthorReviewOut | None = None
+
+
 def _validate_images(v: list[str] | None) -> list[str] | None:
     if v is None:
         return v
@@ -43,13 +56,19 @@ class RippleCreate(BaseModel):
 
 
 class RippleUpdate(BaseModel):
-    """作者修改被封禁微澜后重新提交审核"""
+    """作者修改正文，省略的配图、话题和情绪沿用当前值。"""
     content: str = Field(min_length=1, max_length=200, description="修改后的正文")
     topic_id: int | None = None
     emotion_code: str | None = None
     images: list[str] = Field(default_factory=list, description="配图 URL，最多 9 张")
+    expected_status: Literal["published", "banned"] | None = None
 
     _images = field_validator("images")(_validate_images)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def strip_content(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class EchoCreate(BaseModel):

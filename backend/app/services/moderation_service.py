@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Ripple, RippleReview, User, UserBan
+from app.services.ripple_service import lock_ripple
 
 
 def is_banned(user: User) -> bool:
@@ -90,16 +91,9 @@ def unban_user(db: Session, admin: User, user_id: int) -> User:
 # ------------------------------------------------------------
 # 微澜封禁 / 审核
 # ------------------------------------------------------------
-def _get_ripple_or_404(db: Session, ripple_id: int) -> Ripple:
-    ripple = db.get(Ripple, ripple_id)
-    if ripple is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="微澜不存在")
-    return ripple
-
-
 def ban_ripple(db: Session, admin: User, ripple_id: int, reason: str | None) -> Ripple:
     """管理员封禁微澜：仅作者可见"""
-    ripple = _get_ripple_or_404(db, ripple_id)
+    ripple = lock_ripple(db, ripple_id)
     ripple.status = "banned"
     db.add(
         RippleReview(ripple_id=ripple.id, reviewer_id=admin.id, action="ban", reason=reason)
@@ -111,7 +105,7 @@ def ban_ripple(db: Session, admin: User, ripple_id: int, reason: str | None) -> 
 
 def approve_ripple(db: Session, admin: User, ripple_id: int) -> Ripple:
     """审核通过：待审核 → 重新公开可见"""
-    ripple = _get_ripple_or_404(db, ripple_id)
+    ripple = lock_ripple(db, ripple_id)
     if ripple.status != "pending":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅待审核的内容可审核通过")
     ripple.status = "published"
@@ -123,7 +117,7 @@ def approve_ripple(db: Session, admin: User, ripple_id: int) -> Ripple:
 
 def reject_ripple(db: Session, admin: User, ripple_id: int, reason: str | None) -> Ripple:
     """审核驳回：回到仅作者可见，作者可再次修改提交"""
-    ripple = _get_ripple_or_404(db, ripple_id)
+    ripple = lock_ripple(db, ripple_id)
     if ripple.status != "pending":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅待审核的内容可驳回")
     ripple.status = "banned"

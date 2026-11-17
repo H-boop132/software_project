@@ -57,7 +57,11 @@ def delete_echo(db: Session, user: User, echo_id: int) -> EchoDeleteOut:
     if root_id is None:
         raise HTTPException(status_code=404, detail="回声不存在")
     # 与发表保持根微澜 -> 回声的加锁顺序，避免删除与回复并发时产生悬挂节点。
-    db.scalar(select(Ripple.id).where(Ripple.id == root_id).with_for_update())
+    ripple_id = db.scalar(select(Ripple.id).where(
+        Ripple.id == root_id, Ripple.status != "deleted",
+    ).with_for_update())
+    if ripple_id is None:
+        raise HTTPException(status_code=404, detail="回声不存在")
     echo = db.execute(select(Echo.id, Echo.user_id).where(Echo.id == echo_id).with_for_update()).one_or_none()
     if echo is None:
         raise HTTPException(status_code=404, detail="回声不存在")

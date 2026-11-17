@@ -22,7 +22,7 @@ class Ripple(Base):
         String(20), ForeignKey("emotions.code", ondelete="SET NULL"), default=None
     )
     status: Mapped[str] = mapped_column(
-        String(20), default="published", comment="published/banned/pending"
+        String(20), default="published", comment="published/banned/pending/deleted"
     )
     images: Mapped[list[str] | None] = mapped_column(
         JSON, default=None, comment="配图 URL 数组（最多 9 张）"
