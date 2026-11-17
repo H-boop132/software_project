@@ -12,7 +12,7 @@ const canDelete = computed(() => props.echo.user.id === store.user?.id || store.
 
 <template>
   <li class="echo-node">
-    <article class="echo-body">
+    <article :id="`echo-${echo.id}`" tabindex="-1" class="echo-body">
       <div class="echo-meta">
         <router-link :to="`/users/${echo.user.id}`">{{ echo.user.nickname }}</router-link>
         <time>{{ new Date(echo.created_at).toLocaleString('zh-CN') }}</time>
@@ -34,6 +34,8 @@ const canDelete = computed(() => props.echo.user.id === store.user?.id || store.
 <style scoped>
 .echo-node { list-style: none; position: relative; margin: 12px 0; }
 .echo-body { border: 1px solid var(--wl-border); background: white; border-radius: 10px; padding: 12px 14px; }
+.echo-body { scroll-margin-top: 120px; }
+.echo-body:target { border-color: #4a8777; box-shadow: 0 0 0 3px #dbeee2; }
 .echo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; }
 .echo-meta a { color: var(--wl-primary); text-decoration: none; font-weight: 600; }
 .echo-meta time { color: #90a4ae; }

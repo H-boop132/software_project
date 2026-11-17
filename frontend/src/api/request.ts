@@ -1,6 +1,12 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    silentError?: boolean
+  }
+}
+
 // 统一请求实例：走 Vite 代理 /api → http://127.0.0.1:8000
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api/v1',
@@ -29,7 +35,7 @@ request.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    ElMessage.error(detail || err.message || '网络错误')
+    if (!err.config?.silentError) ElMessage.error(detail || err.message || '网络错误')
     return Promise.reject(err)
   },
 )

@@ -3,17 +3,17 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Echo, Emotion, Ripple, User
+from app.models import Echo, Emotion, Notification, Ripple, User
 from app.schemas.ripple import EchoCreate, EchoDeleteOut, EchoOut
 
 MAX_ECHO_DEPTH = 8
 
 
 def create_echo(db: Session, user: User, ripple_id: int, data: EchoCreate) -> EchoOut:
-    root = db.scalar(select(Ripple.id).where(
+    recipient = db.scalar(select(Ripple.user_id).where(
         Ripple.id == ripple_id, Ripple.status == "published"
     ).with_for_update())
-    if root is None:
+    if recipient is None:
         raise HTTPException(status_code=404, detail="微澜不存在")
     if data.emotion_code is not None and db.get(Emotion, data.emotion_code) is None:
         raise HTTPException(status_code=400, detail="情绪标签不存在")
@@ -22,10 +22,12 @@ def create_echo(db: Session, user: User, ripple_id: int, data: EchoCreate) -> Ec
     depth = 1
     visited = set()
     while parent_id is not None:
-        parent = db.execute(select(Echo.id, Echo.root_ripple_id, Echo.parent_echo_id)
+        parent = db.execute(select(Echo.id, Echo.root_ripple_id, Echo.parent_echo_id, Echo.user_id)
                             .where(Echo.id == parent_id).with_for_update()).one_or_none()
         if parent is None or parent.root_ripple_id != ripple_id:
             raise HTTPException(status_code=404, detail="回复目标不存在")
+        if depth == 1:
+            recipient = parent.user_id
         if parent.id in visited:
             raise HTTPException(status_code=400, detail="回复关系异常")
         visited.add(parent.id)
@@ -39,6 +41,12 @@ def create_echo(db: Session, user: User, ripple_id: int, data: EchoCreate) -> Ec
         user_id=user.id, content=data.content, emotion_code=data.emotion_code,
     )
     db.add(echo)
+    if recipient != user.id:
+        db.flush()
+        db.add(Notification(
+            recipient_id=recipient, actor_id=user.id, echo_id=echo.id,
+            kind="reply" if data.parent_echo_id else "echo",
+        ))
     db.commit()
     db.refresh(echo)
     return EchoOut.model_validate(echo)

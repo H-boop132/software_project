@@ -3,7 +3,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models import Follow, User
+from app.models import Follow, Notification, User
 from app.schemas.user import UserPage, UserProfile
 
 
@@ -62,7 +62,10 @@ def set_follow(db: Session, actor: User, target_id: int, following: bool) -> Use
             Follow.follower_id == actor.id, Follow.followee_id == target_id
         ).with_for_update())
         if existing is None:
-            db.add(Follow(follower_id=actor.id, followee_id=target_id))
+            follow = Follow(follower_id=actor.id, followee_id=target_id)
+            db.add(follow)
+            db.flush()
+            db.add(Notification(recipient_id=target_id, actor_id=actor.id, kind="follow", follow_id=follow.id))
     else:
         db.execute(delete(Follow).where(
             Follow.follower_id == actor.id, Follow.followee_id == target_id

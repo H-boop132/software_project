@@ -144,6 +144,16 @@ watch(() => route.params.id, () => {
   void loadDetail()
 }, { immediate: true })
 onBeforeUnmount(() => { requestVersion++ })
+
+watch([() => route.hash, detail], async ([hash, loaded]) => {
+  if (!loaded || !/^#echo-\d+$/.test(hash)) return
+  echoView.value = 'discussion'
+  await nextTick()
+  if (route.hash !== hash) return
+  const echo = document.getElementById(hash.slice(1))
+  echo?.focus({ preventScroll: true })
+  echo?.scrollIntoView({ block: 'center' })
+})
 </script>
 
 <template>
@@ -200,7 +210,7 @@ onBeforeUnmount(() => { requestVersion++ })
         还没有回声，等待第一个共鸣者。
       </div>
 
-      <ul v-if="echoView === 'discussion'" class="echo-list" aria-label="回声讨论">
+      <ul v-if="echoView === 'discussion'" :key="route.hash" class="echo-list" aria-label="回声讨论">
         <EchoNode v-for="echo in detail.echoes" :key="echo.id" :echo="echo" :interactive="interactive" @reply="reply" @remove="removeEcho" />
       </ul>
       <template v-else>

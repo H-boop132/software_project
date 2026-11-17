@@ -12,6 +12,7 @@ USE `weilan`;
 -- ------------------------------------------------------------
 DROP TABLE IF EXISTS `user_bans`;
 DROP TABLE IF EXISTS `ripple_reviews`;
+DROP TABLE IF EXISTS `notifications`;
 DROP TABLE IF EXISTS `echoes`;
 DROP TABLE IF EXISTS `likes`;
 DROP TABLE IF EXISTS `follows`;
@@ -189,3 +190,23 @@ CREATE TABLE `ripple_reviews` (
     CONSTRAINT `fk_reviews_ripple`   FOREIGN KEY (`ripple_id`)   REFERENCES `ripples` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_reviews_reviewer` FOREIGN KEY (`reviewer_id`) REFERENCES `users` (`id`)  ON DELETE CASCADE
 ) ENGINE = InnoDB COMMENT = '微澜审核审计';
+
+CREATE TABLE IF NOT EXISTS `notifications` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `recipient_id` BIGINT UNSIGNED NOT NULL,
+    `actor_id` BIGINT UNSIGNED NOT NULL,
+    `kind` VARCHAR(12) NOT NULL,
+    `echo_id` BIGINT UNSIGNED NULL,
+    `follow_id` BIGINT UNSIGNED NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `read_at` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_notifications_recipient_id` (`recipient_id`, `id`),
+    KEY `idx_notifications_recipient_read` (`recipient_id`, `read_at`),
+    UNIQUE KEY `uk_notification_echo` (`echo_id`),
+    UNIQUE KEY `uk_notification_follow` (`follow_id`),
+    CONSTRAINT `fk_notifications_recipient` FOREIGN KEY (`recipient_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_notifications_actor` FOREIGN KEY (`actor_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_notifications_echo` FOREIGN KEY (`echo_id`) REFERENCES `echoes` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_notifications_follow` FOREIGN KEY (`follow_id`) REFERENCES `follows` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
