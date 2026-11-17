@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ChatDotRound, Refresh } from '@element-plus/icons-vue'
 import type { InputInstance } from 'element-plus'
 import { createEcho, deleteEcho, getRippleDetail } from '@/api/ripples'
 import type { CollectionOut, EchoOut, LikeOut, RippleDetail } from '@/api/types'
@@ -144,6 +145,16 @@ watch(() => route.params.id, () => {
   void loadDetail()
 }, { immediate: true })
 onBeforeUnmount(() => { requestVersion++ })
+
+watch([() => route.hash, detail], async ([hash, loaded]) => {
+  if (!loaded || !/^#echo-\d+$/.test(hash)) return
+  echoView.value = 'discussion'
+  await nextTick()
+  if (route.hash !== hash) return
+  const echo = document.getElementById(hash.slice(1))
+  echo?.focus({ preventScroll: true })
+  echo?.scrollIntoView({ block: 'center' })
+})
 </script>
 
 <template>
@@ -174,7 +185,7 @@ onBeforeUnmount(() => { requestVersion++ })
           />
         </div>
         <div class="rc-foot">
-          <span v-if="detail.ripple.topic" class="rc-topic"># {{ detail.ripple.topic.name }}</span>
+          <router-link v-if="detail.ripple.topic" class="rc-topic" :to="{ name: 'topic', params: { id: detail.ripple.topic.id } }"># {{ detail.ripple.topic.name }}</router-link>
           <span>💬 {{ detail.ripple.echo_count }}</span>
           <LikeButton :ripple="detail.ripple" @updated="updateLike" />
           <CollectionButton :ripple="detail.ripple" @updated="updateCollection" />
@@ -189,24 +200,27 @@ onBeforeUnmount(() => { requestVersion++ })
       />
 
       <div class="echo-toolbar">
-        <h3>回声 · 涟漪树 <small>{{ detail.ripple.echo_count }}</small></h3>
+        <h3><ChatDotRound aria-hidden="true" />回声 · 涟漪树 <small>{{ detail.ripple.echo_count }} 条回声</small></h3>
         <el-radio-group v-model="echoView" aria-label="回声展示方式">
           <el-radio-button value="discussion">讨论列表</el-radio-button>
           <el-radio-button value="tree">涟漪树</el-radio-button>
         </el-radio-group>
-        <el-button :disabled="loading || posting || deleting" @click="selectedEcho = null; loadDetail()">刷新回声</el-button>
+        <el-button :icon="Refresh" :disabled="loading || posting || deleting" @click="selectedEcho = null; loadDetail()">刷新回声</el-button>
       </div>
       <div v-if="detail.echoes.length === 0" class="empty-tip">
         还没有回声，等待第一个共鸣者。
       </div>
 
-      <ul v-if="echoView === 'discussion'" class="echo-list" aria-label="回声讨论">
+      <ul v-if="echoView === 'discussion'" :key="route.hash" class="echo-list" aria-label="回声讨论">
         <EchoNode v-for="echo in detail.echoes" :key="echo.id" :echo="echo" :interactive="interactive" @reply="reply" @remove="removeEcho" />
       </ul>
       <template v-else>
         <EchoTreeMap :ripple="detail.ripple" :echoes="detail.echoes" :selected-id="selectedEcho?.id ?? null" @select="selectedEcho = $event" />
-        <article v-if="selectedEcho" class="card selected-echo">
-          <router-link :to="`/users/${selectedEcho.user.id}`">{{ selectedEcho.user.nickname }}</router-link>
+        <article v-if="selectedEcho" class="card selected-echo" aria-label="选中的回声">
+          <div class="selected-meta">
+            <router-link :to="`/users/${selectedEcho.user.id}`">{{ selectedEcho.user.nickname }}</router-link>
+            <span>{{ formatTime(selectedEcho.created_at) }}</span>
+          </div>
           <p>{{ selectedEcho.content }}</p>
           <el-button type="primary" :disabled="!interactive || depthOf(selectedEcho.id) >= 8" @click="reply(selectedEcho)">回复此回声</el-button>
           <el-button v-if="canDeleteSelected" type="danger" plain :disabled="!interactive" @click="removeEcho(selectedEcho)">删除此回声</el-button>
@@ -294,8 +308,9 @@ onBeforeUnmount(() => { requestVersion++ })
 }
 
 .echo-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 24px 0 12px; }
-.echo-toolbar h3 { font-size: 17px; margin: 0 auto 0 0; }
-.echo-toolbar small { color: #78909c; }
+.echo-toolbar h3 { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 18px; margin: 0 auto 0 0; }
+.echo-toolbar h3 svg { width: 19px; height: 19px; color: var(--wl-primary); }
+.echo-toolbar small { font-size: 11px; font-weight: 500; color: #3f685b; background: #e8f0e9; border-radius: 6px; padding: 3px 6px; }
 .echo-list { padding: 0; list-style: none; }
 .echo-composer { margin-top: 20px; }
 .reply-heading, .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -303,6 +318,9 @@ onBeforeUnmount(() => { requestVersion++ })
 .reply-preview { padding: 10px; border-left: 3px solid #9bc8d2; background: #f5fafb; color: #607d8b; overflow-wrap: anywhere; }
 .echo-composer small { color: #90a4ae; }
 .selected-echo { margin-top: 12px; }
-.selected-echo a { color: var(--wl-primary); text-decoration: none; }
+.selected-echo { border-inline-start: 3px solid #377f6a; background: #fbfdfb; }
+.selected-meta { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: baseline; }
+.selected-meta span { font-size: 12px; color: var(--wl-muted); }
+.selected-echo a { color: var(--wl-primary); font-weight: 650; text-underline-offset: 3px; }
 .selected-echo p { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

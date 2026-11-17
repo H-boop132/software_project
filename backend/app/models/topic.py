@@ -1,7 +1,7 @@
 """话题与情绪字典模型"""
 from datetime import datetime
 
-from sqlalchemy import String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -24,3 +24,10 @@ class Emotion(Base):
     code: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(20))
     color: Mapped[str] = mapped_column(String(7))
+
+
+class TopicSubscription(Base):
+    __tablename__ = "topic_subscriptions"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id", ondelete="CASCADE"), primary_key=True)

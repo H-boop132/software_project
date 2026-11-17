@@ -1,9 +1,12 @@
 /* 微澜全局样式 */
 :root {
-  --wl-primary: #1f7a8c;
-  --wl-bg: #f4f8fa;
+  --wl-primary: #236358;
+  --wl-bg: #f3f6f3;
   --wl-card: #ffffff;
-  --wl-border: #e3edf0;
+  --wl-border: #dfe8e1;
+  --wl-ink: #1c3530;
+  --wl-muted: #587169;
+  --el-color-primary: #236358;
 }
 
 * {
@@ -14,7 +17,7 @@ body {
   margin: 0;
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   background: var(--wl-bg);
-  color: #263238;
+  color: var(--wl-ink);
 }
 
 .app-shell {
@@ -33,10 +36,10 @@ body {
 }
 
 .topbar-inner {
-  max-width: 960px;
+  max-width: 1224px;
   margin: 0 auto;
-  padding: 0 16px;
-  height: 60px;
+  padding: 0 24px;
+  min-height: 68px;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -44,15 +47,21 @@ body {
 
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 9px;
   text-decoration: none;
   color: inherit;
 }
 
 .brand-logo {
-  font-size: 22px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 52% 59%, #dfece1 0 5%, transparent 8% 19%, #97baaa 21% 25%, transparent 27% 37%, #cfddd1 40% 44%, transparent 47%), #24584f;
 }
+
+.brand-wordmark { display: grid; gap: 3px; line-height: 1; }
 
 .brand-name {
   font-size: 20px;
@@ -61,9 +70,9 @@ body {
 }
 
 .brand-sub {
-  font-size: 12px;
-  color: #90a4ae;
-  letter-spacing: 1px;
+  font-size: 9px;
+  color: var(--wl-muted);
+  letter-spacing: .11em;
 }
 
 .nav {
@@ -73,12 +82,18 @@ body {
 }
 
 .nav-link {
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 8px 12px;
   border-radius: 8px;
   text-decoration: none;
   color: #546e7a;
   font-size: 14px;
 }
+
+.nav-link svg, .compose-btn svg { width: 16px; height: 16px; }
 
 .nav-link:hover {
   background: var(--wl-bg);
@@ -86,7 +101,7 @@ body {
 
 .nav-link.active {
   color: var(--wl-primary);
-  background: #e1f3f6;
+  background: #e8f2eb;
   font-weight: 600;
 }
 
@@ -97,6 +112,10 @@ body {
 }
 
 .compose-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
   background: var(--wl-primary);
   color: #fff;
   padding: 7px 16px;
@@ -110,11 +129,17 @@ body {
 }
 
 .user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--wl-primary);
   font-weight: 600;
   text-decoration: none;
   font-size: 14px;
 }
+
+.user-initial { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e5efe7; }
+.user-name { max-width: 108px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 
 /* 主区域 */
 .main {
@@ -125,9 +150,22 @@ body {
   padding: 0 16px;
 }
 
+.main-wide { max-width: 1224px; padding-inline: 24px; margin-top: 27px; }
+
+@media (max-width: 760px) {
+  .topbar-inner { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 16px 7px; }
+  .nav { grid-row: 2; grid-column: 1 / -1; overflow-x: auto; }
+  .actions { gap: 8px; }
+  .nav-link { padding: 7px 9px; }
+  .main-wide { padding-inline: 16px; margin-top: 16px; }
+}
+@media (max-width: 430px) {
+  .user-name { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
+}
+
 .footer {
   text-align: center;
-  color: #90a4ae;
+  color: var(--wl-muted);
   font-size: 12px;
   padding: 28px 0 20px;
 }

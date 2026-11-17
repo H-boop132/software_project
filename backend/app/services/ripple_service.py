@@ -1,14 +1,17 @@
 """微澜核心业务：时间线 / 发布 / 详情 / 潮汐 / 气象"""
 from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, case, func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload
 
-from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, Topic, User
+from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, RippleReview, Topic, TopicSubscription, User
 from app.schemas.ripple import (
+    AuthorReviewOut,
     EchoOut,
     MoodOut,
+    MyRippleOut,
     RippleCreate,
     RippleDetail,
     RippleOut,
@@ -94,6 +97,10 @@ def list_ripples(
     current_user: User | None = None,
     author_id: int | None = None,
     following_user_id: int | None = None,
+    emotion_code: str | None = None,
+    has_images: bool = False,
+    sort: Literal["latest", "discussed", "liked"] = "latest",
+    subscribed_user_id: int | None = None,
 ) -> list[RippleOut]:
     """微澜列表：默认仅公开（published）；管理端可传 status=None 查看全部状态
     支持关键词（内容模糊匹配）与发布时间范围筛选
@@ -103,20 +110,34 @@ def list_ripples(
         select(Ripple, like_cnt.c.cnt, echo_cnt.c.cnt)
         .outerjoin(like_cnt, like_cnt.c.ripple_id == Ripple.id)
         .outerjoin(echo_cnt, echo_cnt.c.root_ripple_id == Ripple.id)
-        .order_by(Ripple.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
+    if sort == "discussed":
+        stmt = stmt.order_by(func.coalesce(echo_cnt.c.cnt, 0).desc())
+    elif sort == "liked":
+        stmt = stmt.order_by(func.coalesce(like_cnt.c.cnt, 0).desc())
+    stmt = stmt.order_by(Ripple.created_at.desc(), Ripple.id.desc())
     if status is not None:
         stmt = stmt.where(Ripple.status == status)
+    else:
+        stmt = stmt.where(Ripple.status != "deleted")
     if author_id is not None:
         stmt = stmt.where(Ripple.user_id == author_id)
     if following_user_id is not None:
         stmt = stmt.where(Ripple.user_id.in_(
             select(Follow.followee_id).where(Follow.follower_id == following_user_id)
         ))
+    if subscribed_user_id is not None:
+        stmt = stmt.where(Ripple.topic_id.in_(
+            select(TopicSubscription.topic_id).where(TopicSubscription.user_id == subscribed_user_id)
+        ))
     if topic_id is not None:
         stmt = stmt.where(Ripple.topic_id == topic_id)
+    if emotion_code is not None:
+        stmt = stmt.where(Ripple.emotion_code == emotion_code)
+    if has_images:
+        stmt = stmt.where(func.json_type(Ripple.images) == "ARRAY", func.json_length(Ripple.images) > 0)
     if keyword:
         stmt = stmt.where(Ripple.content.like(f"%{keyword}%"))
     if start is not None:
@@ -166,24 +187,28 @@ def ripples_to_out(
     ]
 
 
-def list_my_ripples(db: Session, user: User, limit: int = 50, offset: int = 0) -> list[RippleOut]:
-    """我的微澜：含封禁/待审核等全部状态（作者可见自己的违规内容）"""
-    like_cnt, echo_cnt = _count_subqueries()
-    stmt = (
-        select(Ripple, like_cnt.c.cnt, echo_cnt.c.cnt)
-        .outerjoin(like_cnt, like_cnt.c.ripple_id == Ripple.id)
-        .outerjoin(echo_cnt, echo_cnt.c.root_ripple_id == Ripple.id)
-        .where(Ripple.user_id == user.id)
-        .order_by(Ripple.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+def list_my_ripples(
+    db: Session, user: User, limit: int = 50, offset: int = 0,
+    status: str | None = None, keyword: str | None = None,
+) -> list[MyRippleOut]:
+    ripples = list_ripples(
+        db, author_id=user.id, current_user=user, status=status, keyword=keyword,
+        limit=limit, offset=offset,
     )
-    rows = db.execute(stmt).all()
-    liked = _liked_ids(db, [r.id for r, _, _ in rows], user)
-    collected = _collected_ids(db, [r.id for r, _, _ in rows], user)
+    if not ripples:
+        return []
+    latest_ids = (
+        select(func.max(RippleReview.id))
+        .where(RippleReview.ripple_id.in_([ripple.id for ripple in ripples]))
+        .group_by(RippleReview.ripple_id)
+    )
+    reviews = {
+        review.ripple_id: AuthorReviewOut.model_validate(review)
+        for review in db.scalars(select(RippleReview).where(RippleReview.id.in_(latest_ids)))
+    }
     return [
-        _to_ripple_out(r, c1 or 0, c2 or 0, r.id in liked, r.id in collected)
-        for r, c1, c2 in rows
+        MyRippleOut(**ripple.model_dump(), latest_review=reviews.get(ripple.id))
+        for ripple in ripples
     ]
 
 
@@ -207,8 +232,17 @@ def create_ripple(db: Session, user: User, data: RippleCreate) -> RippleOut:
     return _to_ripple_out(ripple)
 
 
-def get_ripple(db: Session, ripple_id: int) -> Ripple | None:
-    return db.get(Ripple, ripple_id)
+def lock_ripple(db: Session, ripple_id: int, *, include_deleted: bool = False) -> Ripple:
+    stmt = (
+        select(Ripple).options(lazyload("*")).where(Ripple.id == ripple_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    if not include_deleted:
+        stmt = stmt.where(Ripple.status != "deleted")
+    ripple = db.scalar(stmt)
+    if ripple is None:
+        raise HTTPException(status_code=404, detail="微澜不存在")
+    return ripple
 
 
 def get_ripple_detail(
@@ -216,7 +250,7 @@ def get_ripple_detail(
 ) -> RippleDetail:
     """微澜详情：封禁/待审核内容仅作者本人可见"""
     ripple = db.get(Ripple, ripple_id)
-    if ripple is None:
+    if ripple is None or ripple.status == "deleted":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="微澜不存在")
 
     # 非公开状态（banned/pending）只对作者开放
@@ -251,29 +285,43 @@ def get_ripple_detail(
 def update_ripple(
     db: Session, user: User, ripple_id: int, data: RippleUpdate
 ) -> RippleOut:
-    """作者修改被封禁微澜并重新提交审核（banned → pending）"""
-    ripple = db.get(Ripple, ripple_id)
-    if ripple is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="微澜不存在")
+    """公开微澜原位更新，被封禁的微澜更新后进入审核队列。"""
+    ripple = lock_ripple(db, ripple_id)
     if ripple.user_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="只能修改自己的微澜"
         )
-    if ripple.status != "banned":
+    if data.expected_status is not None and ripple.status != data.expected_status:
+        raise HTTPException(status_code=409, detail="微澜状态已变更，请重新打开编辑")
+    if ripple.status not in {"published", "banned"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="仅被封禁的微澜可修改并重新提交审核",
+            detail="审核中的微澜暂不可编辑",
         )
-    ripple.content = data.content
-    ripple.topic_id = data.topic_id
-    ripple.emotion_code = data.emotion_code
-    ripple.images = data.images or None
-    ripple.status = "pending"
-    # 重新提交审核的时间即新的发布时间
-    ripple.created_at = datetime.now()
+    values = data.model_dump(exclude_unset=True, exclude={"expected_status"})
+    if values.get("topic_id") is not None and db.get(Topic, values["topic_id"]) is None:
+        raise HTTPException(status_code=400, detail="话题不存在")
+    if values.get("emotion_code") is not None and db.get(Emotion, values["emotion_code"]) is None:
+        raise HTTPException(status_code=400, detail="情绪标签不存在")
+    for field, value in values.items():
+        setattr(ripple, field, value)
+    if ripple.status == "banned":
+        ripple.status = "pending"
+        ripple.created_at = datetime.now()
     db.commit()
     db.refresh(ripple)
-    return _to_ripple_out(ripple)
+    return ripples_to_out(db, [ripple], current_user=user)[0]
+
+
+def delete_own_ripple(db: Session, user: User, ripple_id: int) -> None:
+    """从社区和作者列表移除内容，保留审核记录。"""
+    ripple = lock_ripple(db, ripple_id, include_deleted=True)
+    if ripple.user_id != user.id:
+        if ripple.status == "deleted":
+            raise HTTPException(status_code=404, detail="微澜不存在")
+        raise HTTPException(status_code=403, detail="只能删除自己的微澜")
+    ripple.status = "deleted"
+    db.commit()
 
 
 def _build_echo_tree(echoes: list[Echo]) -> list[EchoOut]:

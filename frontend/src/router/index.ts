@@ -6,14 +6,21 @@ const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { bare: true } },
     { path: '/', name: 'home', component: () => import('@/views/HomeView.vue') },
+    { path: '/explore', name: 'explore', component: () => import('@/views/HomeView.vue') },
+    { path: '/topics/:id', name: 'topic', component: () => import('@/views/HomeView.vue') },
     { path: '/compose', name: 'compose', component: () => import('@/views/ComposeView.vue') },
     { path: '/tide', name: 'tide', component: () => import('@/views/TideView.vue') },
     { path: '/mood', name: 'mood', component: () => import('@/views/MoodView.vue') },
     { path: '/ripples/:id', name: 'ripple-detail', component: () => import('@/views/RippleDetailView.vue') },
     { path: '/profile', name: 'profile', component: () => import('@/views/ProfileView.vue') },
+    { path: '/notifications', name: 'notifications', component: () => import('@/views/NotificationsView.vue') },
     { path: '/users/:id', name: 'user-profile', component: () => import('@/views/UserView.vue') },
     { path: '/admin', name: 'admin', component: () => import('@/views/AdminView.vue') },
   ],
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.path !== from.path) return { top: 0 }
+  },
 })
 
 // 全局路由守卫

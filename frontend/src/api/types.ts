@@ -63,6 +63,12 @@ export interface RippleOut {
   echo_count: number
 }
 
+export type MyRippleStatus = 'published' | 'banned' | 'pending'
+
+export interface MyRippleOut extends RippleOut {
+  latest_review: { action: 'ban' | 'approve' | 'reject'; reason: string | null; created_at: string } | null
+}
+
 export interface LikeOut {
   ripple_id: number
   is_liked: boolean

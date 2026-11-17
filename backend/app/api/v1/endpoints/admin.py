@@ -88,7 +88,8 @@ def ban_ripple(
     admin: User = Depends(get_current_admin),
 ):
     """封禁微澜：下架为仅作者可见"""
-    return moderation_service.ban_ripple(db, admin, ripple_id, reason=data.reason)
+    ripple = moderation_service.ban_ripple(db, admin, ripple_id, reason=data.reason)
+    return ripple_service.ripples_to_out(db, [ripple])[0]
 
 
 @router.get("/reviews", response_model=list[RippleOut], tags=["管理"])
@@ -111,7 +112,8 @@ def approve_ripple(
     admin: User = Depends(get_current_admin),
 ):
     """审核通过：恢复公开可见"""
-    return moderation_service.approve_ripple(db, admin, ripple_id)
+    ripple = moderation_service.approve_ripple(db, admin, ripple_id)
+    return ripple_service.ripples_to_out(db, [ripple])[0]
 
 
 @router.post("/ripples/{ripple_id}/reject", response_model=RippleOut, tags=["管理"])
@@ -122,7 +124,8 @@ def reject_ripple(
     admin: User = Depends(get_current_admin),
 ):
     """审核驳回：回到仅作者可见，作者可再次修改提交"""
-    return moderation_service.reject_ripple(db, admin, ripple_id, reason=data.reason)
+    ripple = moderation_service.reject_ripple(db, admin, ripple_id, reason=data.reason)
+    return ripple_service.ripples_to_out(db, [ripple])[0]
 
 
 @router.delete("/ripples/{ripple_id}", status_code=status.HTTP_200_OK, tags=["管理"])

@@ -1,5 +1,6 @@
 """微澜接口：时间线 / 发布 / 我的微澜 / 详情（含回声树）/ 修改重提"""
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy.orm import Session
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.deps import get_current_user, get_optional_user
 from app.models.user import User
-from app.schemas.ripple import EchoCreate, EchoOut, RippleCreate, RippleDetail, RippleOut, RippleUpdate
+from app.schemas.ripple import EchoCreate, EchoOut, MyRippleOut, RippleCreate, RippleDetail, RippleOut, RippleUpdate
 from app.services import echo_service, ripple_service
 
 router = APIRouter()
@@ -19,6 +20,9 @@ def list_ripples(
     keyword: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    emotion_code: str | None = Query(None, max_length=20),
+    has_images: bool = False,
+    sort: Literal["latest", "discussed", "liked"] = "latest",
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: User | None = Depends(get_optional_user),
@@ -33,6 +37,9 @@ def list_ripples(
         keyword=keyword,
         start=start,
         end=end,
+        emotion_code=emotion_code,
+        has_images=has_images,
+        sort=sort,
         current_user=user,
     )
 
@@ -46,15 +53,17 @@ def create_ripple(
     return ripple_service.create_ripple(db, user, data)
 
 
-@router.get("/mine", response_model=list[RippleOut])
+@router.get("/mine", response_model=list[MyRippleOut])
 def my_ripples(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    status: Literal["published", "banned", "pending"] | None = None,
+    keyword: str | None = Query(None, max_length=100),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """我的微澜：含封禁/待审核全部状态"""
-    return ripple_service.list_my_ripples(db, user, limit=limit, offset=offset)
+    return ripple_service.list_my_ripples(db, user, limit=limit, offset=offset, status=status, keyword=keyword)
 
 
 @router.get("/following", response_model=list[RippleOut])
@@ -66,6 +75,18 @@ def following_ripples(
     """只显示已关注作者的公开微澜。"""
     return ripple_service.list_ripples(
         db, following_user_id=user.id, current_user=user,
+        topic_id=topic_id, keyword=keyword, limit=limit, offset=offset,
+    )
+
+
+@router.get("/subscribed-topics", response_model=list[RippleOut])
+def subscribed_topic_ripples(
+    topic_id: int | None = Query(None, gt=0), keyword: str | None = Query(None, max_length=100),
+    limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    return ripple_service.list_ripples(
+        db, subscribed_user_id=user.id, current_user=user,
         topic_id=topic_id, keyword=keyword, limit=limit, offset=offset,
     )
 
@@ -87,8 +108,17 @@ def update_ripple(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """修改被封禁的微澜并重新提交审核（banned → pending）"""
+    """编辑自己的微澜，封禁内容编辑后重新提交审核。"""
     return ripple_service.update_ripple(db, user, ripple_id, data)
+
+
+@router.delete("/{ripple_id}", status_code=204)
+def delete_own_ripple(
+    ripple_id: int = Path(gt=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ripple_service.delete_own_ripple(db, user, ripple_id)
 
 
 @router.post("/{ripple_id}/echoes", response_model=EchoOut, status_code=status.HTTP_201_CREATED)

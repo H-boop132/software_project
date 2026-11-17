@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import type { CollectionOut, LikeOut, RippleOut } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
@@ -49,14 +50,25 @@ function scrollBy(dir: number) {
   el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' })
 }
 
-onMounted(updateArrows)
+let galleryObserver: ResizeObserver | undefined
+onMounted(() => {
+  updateArrows()
+  if (galleryEl.value) {
+    galleryObserver = new ResizeObserver(updateArrows)
+    galleryObserver.observe(galleryEl.value)
+  }
+})
+onBeforeUnmount(() => galleryObserver?.disconnect())
 </script>
 
 <template>
   <div class="card ripple-card">
     <div class="rc-head">
-      <router-link :to="`/users/${ripple.user.id}`" class="rc-nickname">{{ ripple.user.nickname }}</router-link>
-      <span class="rc-time">{{ formatTime(ripple.created_at) }}</span>
+      <router-link :to="`/users/${ripple.user.id}`" class="rc-avatar" :aria-label="ripple.user.nickname">{{ ripple.user.nickname.slice(0, 1) }}</router-link>
+      <div class="rc-author">
+        <router-link :to="`/users/${ripple.user.id}`" class="rc-nickname">{{ ripple.user.nickname }}</router-link>
+        <time class="rc-time" :datetime="ripple.created_at">{{ formatTime(ripple.created_at) }}</time>
+      </div>
       <span
         v-if="ripple.emotion"
         class="rc-emotion"
@@ -70,8 +82,9 @@ onMounted(updateArrows)
       {{ ripple.content }}
     </router-link>
 
-    <div v-if="ripple.images?.length" class="rc-gallery">
+    <div v-if="ripple.images?.length" class="rc-gallery" :class="{ 'rc-gallery-single': ripple.images.length === 1 }">
       <button
+        v-if="ripple.images.length > 1"
         type="button"
         class="rc-arrow"
         :disabled="!canLeft"
@@ -85,17 +98,17 @@ onMounted(updateArrows)
         class="rc-images"
         @scroll.passive="updateArrows"
       >
-        <img
+        <button
           v-for="(url, i) in ripple.images"
-          :key="i"
-          :src="url"
-          class="rc-img"
-          alt="配图"
+          :key="url + i"
+          type="button"
+          class="rc-image-button"
+          :aria-label="`查看第 ${i + 1} 张配图`"
           @click="openViewer(ripple.images, i)"
-          @load="updateArrows"
-        />
+        ><img :src="url" class="rc-img" alt="" loading="lazy" @load="updateArrows" /></button>
       </div>
       <button
+        v-if="ripple.images.length > 1"
         type="button"
         class="rc-arrow"
         :disabled="!canRight"
@@ -114,8 +127,8 @@ onMounted(updateArrows)
     />
 
     <div class="rc-foot">
-      <span v-if="ripple.topic" class="rc-topic"># {{ ripple.topic.name }}</span>
-      <span class="rc-stat">💬 {{ ripple.echo_count }}</span>
+      <router-link v-if="ripple.topic" :to="{ name: 'topic', params: { id: ripple.topic.id } }" class="rc-topic"># {{ ripple.topic.name }}</router-link>
+      <router-link :to="`/ripples/${ripple.id}`" class="rc-stat" :aria-label="`查看回声，共 ${ripple.echo_count} 条`"><ChatDotRound aria-hidden="true" />{{ ripple.echo_count }}</router-link>
       <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
       <CollectionButton :ripple="ripple" @updated="emit('collection-updated', $event)" />
     </div>
@@ -124,6 +137,8 @@ onMounted(updateArrows)
 
 <style scoped>
 .ripple-card {
+  padding: 17px 18px 13px;
+  border-radius: 15px;
   transition: box-shadow 0.2s;
 }
 
@@ -138,6 +153,9 @@ onMounted(updateArrows)
   margin-bottom: 8px;
 }
 
+.rc-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; display: grid; place-items: center; background: #e7f1e8; color: var(--wl-primary); font-size: 14px; font-weight: 600; text-decoration: none; }
+.rc-author { display: grid; gap: 2px; min-width: 0; }
+
 .rc-nickname {
   font-weight: 600;
   color: #37474f;
@@ -146,12 +164,16 @@ onMounted(updateArrows)
 
 .rc-time {
   font-size: 12px;
-  color: #90a4ae;
+  color: var(--wl-muted);
 }
 
 .rc-emotion {
   font-size: 12px;
   margin-left: auto;
+  white-space: nowrap;
+  padding: 4px 7px;
+  border: 1px solid var(--wl-border);
+  border-radius: 99px;
 }
 
 .rc-content {
@@ -176,12 +198,16 @@ onMounted(updateArrows)
 
 .rc-images {
   flex: 1;
+  min-width: 0;
   display: flex;
   gap: 8px;
   overflow-x: auto;
   padding: 2px 0;
   scrollbar-width: none;
 }
+
+.rc-image-button { max-width: 100%; flex-shrink: 0; border: 0; padding: 0; border-radius: 8px; display: block; background: #eef4ef; cursor: zoom-in; overflow: hidden; }
+.rc-gallery-single .rc-image-button { max-width: min(100%, 420px); }
 
 .rc-images::-webkit-scrollbar {
   display: none;
@@ -213,8 +239,11 @@ onMounted(updateArrows)
 
 .rc-img {
   /* 多图：高度固定（与单图高度一致），宽度按原图比例自动，不变形不裁切 */
-  height: 184px;
+  display: block;
+  max-width: 100%;
+  height: clamp(120px, 27vw, 184px);
   width: auto;
+  object-fit: contain;
   border-radius: 8px;
   cursor: zoom-in;
   flex-shrink: 0;
@@ -224,7 +253,9 @@ onMounted(updateArrows)
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--wl-border);
   font-size: 13px;
   color: #78909c;
 }
@@ -232,5 +263,12 @@ onMounted(updateArrows)
 .rc-topic {
   color: var(--wl-primary);
   margin-right: auto;
+  background: #edf4ee;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-decoration: none;
 }
+.rc-stat { display: inline-flex; align-items: center; gap: 4px; color: var(--wl-muted); text-decoration: none; padding: 4px; }
+.rc-stat svg { width: 15px; height: 15px; }
+.rc-topic:hover, .rc-stat:hover, .rc-nickname:hover { text-decoration: underline; }
 </style>
