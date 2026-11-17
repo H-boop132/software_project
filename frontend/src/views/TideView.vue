@@ -27,7 +27,7 @@ function trendColor(trend: string): string {
 <template>
   <div>
     <h2 class="page-title">话题潮汐榜</h2>
-    <p class="sub">热度 = 基础热度 + 微澜×10 + 回声×5 + 点赞×2，随讨论实时涨落。</p>
+    <p class="sub">互动初始权重：微澜 10、回声 5、点赞 2，贡献每 72 小时减半，再叠加话题基础热度。箭头比较最近 24 小时与前 24 小时的互动量。</p>
 
     <div v-loading="loading">
       <div v-for="t in tides" :key="t.topic.id" class="card tide-item">
@@ -43,6 +43,7 @@ function trendColor(trend: string): string {
         </div>
         <div class="tide-meta">
           微澜 {{ t.ripple_count }} · 回声 {{ t.echo_count }}
+          · 近 24 小时互动分 {{ t.recent_activity }} / 前 24 小时 {{ t.previous_activity }}
           <span class="tide-desc">{{ t.topic.description }}</span>
         </div>
       </div>

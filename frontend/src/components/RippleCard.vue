@@ -55,7 +55,7 @@ onMounted(updateArrows)
 <template>
   <div class="card ripple-card">
     <div class="rc-head">
-      <span class="rc-nickname">{{ ripple.user.nickname }}</span>
+      <router-link :to="`/users/${ripple.user.id}`" class="rc-nickname">{{ ripple.user.nickname }}</router-link>
       <span class="rc-time">{{ formatTime(ripple.created_at) }}</span>
       <span
         v-if="ripple.emotion"
@@ -141,6 +141,7 @@ onMounted(updateArrows)
 .rc-nickname {
   font-weight: 600;
   color: #37474f;
+  text-decoration: none;
 }
 
 .rc-time {

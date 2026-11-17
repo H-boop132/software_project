@@ -1,14 +1,25 @@
 """点赞与收藏接口：所有写操作复用登录与账号封禁校验。"""
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.interaction import CollectionOut, LikeOut
-from app.services.interaction_service import set_collection, set_like
+from app.schemas.interaction import CollectionOut, CollectionPage, LikeOut
+from app.services.interaction_service import list_collections, set_collection, set_like
 
 router = APIRouter()
+
+
+@router.get("/collections", response_model=CollectionPage)
+def my_collections(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """分页查看本人的收藏，按收藏时间从新到旧排列。"""
+    return list_collections(db, user, limit=limit, offset=offset)
 
 
 @router.put("/ripples/{ripple_id}/like", response_model=LikeOut)

@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/mood', name: 'mood', component: () => import('@/views/MoodView.vue') },
     { path: '/ripples/:id', name: 'ripple-detail', component: () => import('@/views/RippleDetailView.vue') },
     { path: '/profile', name: 'profile', component: () => import('@/views/ProfileView.vue') },
+    { path: '/users/:id', name: 'user-profile', component: () => import('@/views/UserView.vue') },
     { path: '/admin', name: 'admin', component: () => import('@/views/AdminView.vue') },
   ],
 })
