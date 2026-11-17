@@ -1,34 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowRight, PartlyCloudy } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import { getMoodSummary } from '@/api/ripples'
 import type { MoodOut } from '@/api/types'
 
 const moods = ref<MoodOut[]>([])
 const loading = ref(true)
 const failed = ref(false)
-const total = computed(() => moods.value.reduce((sum, item) => sum + item.count, 0))
+const selectedCode = ref<string>()
+const hoveredCode = ref<string>()
+const focusedCode = ref<string>()
 const number = new Intl.NumberFormat('zh-CN')
-
+const ticks = [0, 25, 50, 75, 100]
 const palette: Record<string, string> = {
-  joy: '#d1954d',
-  anger: '#c66d60',
-  sorrow: '#6589b2',
-  fear: '#8b76ae',
-  think: '#4d8d73',
-  calm: '#6f8e91',
+  think: '#266651',
+  calm: '#466f73',
+  joy: '#a15c21',
+  anger: '#a14b40',
+  fear: '#705989',
+  sorrow: '#476a96',
 }
 
-const readings = computed(() => moods.value.map(item => ({ ...item, tone: palette[item.code] || item.color })))
-const leaders = computed(() => readings.value.filter(item => item.count === readings.value[0]?.count))
-const ring = computed(() => {
-  let end = 0
-  return readings.value.map((item, index) => {
-    const start = end
-    end = index === readings.value.length - 1 ? 100 : start + item.count / total.value * 100
-    return item.tone + ' ' + start + '% ' + end + '%'
-  }).join(', ')
-})
+const readings = computed(() => moods.value.filter(item => item.count > 0).map(item => ({
+  ...item, tone: palette[item.code] ?? '#536c60',
+})))
+const total = computed(() => readings.value.reduce((sum, item) => sum + item.count, 0))
+const selected = computed(() => readings.value.find(item => item.code === selectedCode.value) ?? readings.value[0])
+const current = computed(() => readings.value.find(item => item.code === (hoveredCode.value ?? focusedCode.value)) ?? selected.value)
+
+function preview(event: PointerEvent, code: string) {
+  if (event.pointerType === 'mouse') hoveredCode.value = code
+}
 
 async function loadMoods() {
   loading.value = true
@@ -47,83 +49,122 @@ onMounted(loadMoods)
 
 <template>
   <div class="mood-page">
-    <header class="mood-hero">
-      <PartlyCloudy class="hero-icon" aria-hidden="true" />
-      <h1>情绪气象</h1>
-      <p>从带有情绪标签的公开微澜里，感受社区的情绪分布。</p>
+    <header class="page-heading">
+      <div>
+        <h1>情绪气象</h1>
+        <p>带有情绪标签的公开微澜，按情绪统计。</p>
+      </div>
+      <div v-if="!loading && !failed && total" class="sample">
+        <strong>{{ number.format(total) }}</strong>
+        <span>条微澜参与统计</span>
+      </div>
     </header>
 
-    <section v-if="loading || failed || !total" class="card mood-state" :aria-busy="loading">
-      <p v-if="loading" role="status">正在汇总情绪…</p>
-      <p v-else-if="failed">情绪数据加载失败。 <el-button text @click="loadMoods">重试</el-button></p>
-      <p v-else>暂无带情绪标签的公开微澜。</p>
-    </section>
-
-    <div v-else class="mood-grid">
-      <section class="card outlook" aria-labelledby="outlook-title">
-        <h2 id="outlook-title">社区情绪分布</h2>
-        <div class="mood-chart">
-          <div class="chart-ring" :style="{ background: 'conic-gradient(' + ring + ')' }" aria-hidden="true"></div>
-          <div class="chart-center">
-            <strong>{{ number.format(total) }}</strong>
-            <span>条带情绪的微澜</span>
-          </div>
+    <p v-if="loading" class="page-state" role="status">正在汇总情绪…</p>
+    <p v-else-if="failed" class="page-state">情绪数据加载失败。 <button type="button" @click="loadMoods">重试</button></p>
+    <p v-else-if="!current" class="page-state">暂无带情绪标签的公开微澜。</p>
+    <template v-else>
+      <section class="mood-chart" aria-labelledby="distribution-title">
+        <h2 id="distribution-title">情绪占比</h2>
+        <div class="scale" aria-hidden="true"><span v-for="tick in ticks" :key="tick">{{ tick }}%</span></div>
+        <div class="distribution" role="group" aria-label="选择情绪查看占比详情" @pointerleave="hoveredCode = undefined">
+          <button v-for="item in readings" :key="item.code" type="button" class="segment"
+            :class="{ 'is-current': item.code === current.code }"
+            :style="{ '--tone': item.tone, '--size': item.count }"
+            :aria-pressed="item.code === selected?.code" :aria-label="item.name + '，' + item.percent + '%'"
+            @pointerenter="preview($event, item.code)" @focus="focusedCode = item.code" @blur="focusedCode = undefined"
+            @click="selectedCode = item.code">
+            <span v-if="item.percent >= 12">{{ item.name }}</span>
+          </button>
         </div>
-        <p class="mood-leading">
-          {{ leaders.length > 1 ? '并列最多' : '出现最多' }}
-          <strong>{{ leaders.map(item => item.name).join('、') }}</strong>
-        </p>
       </section>
-      <section class="card breakdown" aria-labelledby="breakdown-title">
-        <h2 id="breakdown-title">情绪明细</h2>
-        <p>点击一种情绪，浏览相应的微澜。</p>
-        <ul class="mood-list">
-          <li v-for="item in readings" :key="item.code">
-            <router-link :to="{ name: 'explore', query: { mood: item.code } }" class="mood-row">
-              <span class="mood-name"><i :style="{ backgroundColor: item.tone }"></i>{{ item.name }}</span>
-              <span class="mood-count">{{ number.format(item.count) }} 条</span>
-              <strong class="mood-percent">{{ item.percent }}%</strong>
-              <ArrowRight class="mood-arrow" aria-hidden="true" />
-              <span class="mood-track" aria-hidden="true"><i :style="{ width: item.percent + '%', backgroundColor: item.tone }"></i></span>
-            </router-link>
-          </li>
-        </ul>
-      </section>
-    </div>
+
+      <div class="mood-layout">
+        <section class="mood-table" aria-label="情绪明细">
+          <div class="table-head" aria-hidden="true"><span>情绪</span><span>微澜数</span><span>占比</span></div>
+          <ul class="mood-list" @pointerleave="hoveredCode = undefined">
+            <li v-for="item in readings" :key="item.code" class="mood-row">
+              <button type="button" class="mood-item" :class="{ 'is-current': item.code === current.code }"
+                :style="{ '--tone': item.tone }" :aria-pressed="item.code === selected?.code"
+                :aria-label="item.name + '，' + item.count + ' 条微澜，占比 ' + item.percent + '%'"
+                @pointerenter="preview($event, item.code)" @focus="focusedCode = item.code" @blur="focusedCode = undefined"
+                @click="selectedCode = item.code">
+                <span class="mood-name"><i aria-hidden="true"></i>{{ item.name }}</span>
+                <span>{{ number.format(item.count) }}</span>
+                <strong>{{ item.percent }}%</strong>
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <aside class="mood-detail" :style="{ '--tone': current.tone }" aria-label="当前情绪详情">
+          <div class="detail-name"><i aria-hidden="true"></i><h2>{{ current.name }}</h2></div>
+          <div :key="current.code" class="detail-value">
+            <strong>{{ current.percent }}<small>%</small></strong>
+            <span>{{ number.format(current.count) }} / {{ number.format(total) }} 条微澜</span>
+          </div>
+          <router-link :to="{ name: 'explore', query: { mood: current.code } }">浏览「{{ current.name }}」微澜 <ArrowRight aria-hidden="true" /></router-link>
+        </aside>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.mood-page { display: grid; gap: 24px; }
-.mood-hero { isolation: isolate; position: relative; overflow: hidden; padding: clamp(24px, 5vw, 46px); border-radius: 24px; border: 1px solid #dae8dd; background: linear-gradient(115deg, #edf6ed, #dcece5); }
-.mood-hero::before { content: ''; position: absolute; inset: 0; z-index: -1; opacity: .82; background: radial-gradient(ellipse at 84% 13%, #fff4cf 0 4%, transparent 30%), repeating-radial-gradient(ellipse 220px 100px at 84% 33%, #fff8e162 0 1px, transparent 2px 23px); pointer-events: none; }
-.hero-icon { width: 30px; height: 30px; padding: 9px; box-sizing: content-box; border-radius: 13px; border: 1px solid #c9dfd2; background: #ffffff8c; color: #347061; }
-.mood-hero h1 { font-family: 'Songti SC', 'Noto Serif CJK SC', SimSun, serif; font-size: clamp(32px, 5.5vw, 60px); margin: 13px 0 8px; line-height: 1.12; letter-spacing: -.035em; }
-.mood-hero p { color: #44645b; font-size: 14px; line-height: 1.65; margin: 0; }
-.mood-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 18px; align-items: start; }
-.mood-grid .card, .mood-state { border-radius: 20px; margin: 0; padding: clamp(16px, 3vw, 29px); }
-.mood-grid h2 { font-size: 21px; margin: 0; }
-.outlook { text-align: center; background: linear-gradient(155deg, #ffffff, #f7faf7); }
-.mood-chart { isolation: isolate; position: relative; display: grid; place-items: center; width: min(100%, 255px); aspect-ratio: 1; margin: 22px auto 19px; border: 1px solid #e0eae2; border-radius: 50%; }
-.chart-ring { position: absolute; inset: 10px; z-index: -1; border-radius: 50%; }
-.chart-center { width: 72%; aspect-ratio: 1; display: grid; align-content: center; justify-items: center; gap: 8px; background: #fff; border: 1px solid #e8efe9; border-radius: 50%; }
-.chart-center strong { font: 650 clamp(27px, 5vw, 43px)/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--wl-ink); }
-.chart-center span, .mood-leading, .breakdown > p { color: var(--wl-muted); font-size: 13px; }
-.mood-leading { margin: 0; }
-.mood-leading strong { font-size: 15px; color: var(--wl-ink); margin-left: 5px; }
-.breakdown > p { margin: 5px 0 16px; }
-.mood-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
-.mood-row { display: grid; grid-template-columns: minmax(55px, 1fr) auto minmax(48px, auto) 16px; align-items: center; gap: 7px 12px; padding: 10px 9px; border-radius: 9px; color: var(--wl-ink); text-decoration: none; }
-.mood-row:hover, .mood-row:focus-visible { background: #eff5f0; }
-.mood-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; }
-.mood-name i { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-.mood-count { color: var(--wl-muted); font-size: 13px; }
-.mood-percent { text-align: right; font-variant-numeric: tabular-nums; }
-.mood-arrow { width: 14px; height: 14px; color: var(--wl-primary); }
-.mood-track { grid-column: 1 / -1; height: 6px; background: #ebf0ec; border-radius: 6px; overflow: hidden; }
-.mood-track i { height: 100%; display: block; border-radius: inherit; }
-.mood-state { text-align: center; color: var(--wl-muted); }
-@media (max-width: 680px) {
-  .mood-grid { grid-template-columns: 1fr; }
+.mood-page { --rule: #d5e0d9; --accent: #236358; padding-top: 8px; }
+.page-heading { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 14px 24px; padding: 10px 0 21px; border-bottom: 2px solid var(--wl-ink); }
+.page-heading h1 { margin: 0; font-size: clamp(29px, 4vw, 44px); line-height: 1.2; letter-spacing: -.035em; }
+.page-heading p { margin: 8px 0 0; color: var(--wl-muted); font-size: 14px; line-height: 1.6; }
+.sample { display: flex; gap: 8px; align-items: baseline; color: var(--wl-muted); font-size: 13px; }
+.sample strong { color: var(--wl-ink); font-size: 25px; line-height: 1; font-variant-numeric: tabular-nums; }
+.mood-chart { padding: 22px 0 26px; border-bottom: 1px solid var(--rule); }
+.mood-chart h2 { margin: 0 0 15px; font-size: 17px; }
+.scale { position: relative; display: flex; justify-content: space-between; padding-bottom: 9px; font-size: 11px; color: var(--wl-muted); font-variant-numeric: tabular-nums; }
+.scale span { position: absolute; transform: translateX(-50%); top: 0; }
+.scale span:nth-child(2) { left: 25%; }
+.scale span:nth-child(3) { left: 50%; }
+.scale span:nth-child(4) { left: 75%; }
+.scale span:first-child { left: 0; transform: none; }
+.scale span:last-child { right: 0; transform: none; }
+.scale::after { content: ''; height: 12px; }
+.distribution { display: flex; isolation: isolate; min-height: 67px; animation: band-in .54s cubic-bezier(.2,.75,.3,1) both; }
+@keyframes band-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.segment { position: relative; display: grid; place-items: center; flex: var(--size) 0 0; min-width: 0; padding: 0; border: 0; background: var(--tone); color: #fff; font: inherit; font-size: clamp(11px, 1.4vw, 14px); line-height: 1.1; font-weight: 650; white-space: nowrap; cursor: pointer; transition: filter .18s ease; }
+.segment + .segment { box-shadow: inset 1px 0 #f3f6f3; }
+.segment span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.distribution:has(.segment:is(:hover, :focus-visible)) .segment:not(.is-current) { filter: saturate(.5); }
+.segment.is-current::after { content: ''; height: 3px; background: #fff; position: absolute; inset: auto max(2px, 8%) 6px; }
+.mood-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 29%); gap: clamp(20px, 3.2vw, 40px); align-items: start; margin-top: 22px; }
+.table-head, .mood-item { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(48px, 20%) minmax(60px, 24%); align-items: center; text-align: right; padding-inline: 12px; }
+.table-head { padding-block: 0 9px; color: var(--wl-muted); font-size: 12px; }
+.table-head span:first-child { text-align: left; }
+.mood-list { list-style: none; padding: 0; margin: 0; border-bottom: 1px solid var(--rule); }
+.mood-row { border-top: 1px solid var(--rule); }
+.mood-item { width: 100%; min-height: 45px; border: 0; background: transparent; color: var(--wl-ink); cursor: pointer; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; transition: background-color .18s ease; }
+.mood-item.is-current { background: #e8f0ea; box-shadow: inset 3px 0 var(--tone); }
+.mood-name, .detail-name { display: flex; align-items: center; text-align: left; gap: 8px; }
+.mood-name i, .detail-name i { display: block; flex: 0 0 9px; width: 9px; height: 9px; background: var(--tone); }
+.mood-detail { padding: 3px 0 5px clamp(16px, 2.4vw, 26px); border-left: 1px solid var(--rule); }
+.detail-name h2 { margin: 0; font-size: 19px; }
+.detail-name i { transition: background-color .18s ease; }
+.detail-value { display: grid; gap: 7px; margin: 12px 0 20px; animation: value-in .18s ease-out both; }
+@keyframes value-in { from { opacity: .55; transform: translateY(3px); } }
+.detail-value strong { color: var(--tone); font-size: clamp(32px, 5vw, 48px); line-height: 1; font-weight: 650; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.detail-value small { font-size: .52em; margin-left: 3px; }
+.detail-value span { color: var(--wl-muted); font-size: 13px; }
+.mood-detail a { display: inline-flex; gap: 6px; align-items: center; color: var(--accent); font-size: 13px; font-weight: 650; text-underline-offset: 4px; }
+.mood-detail a svg { width: 15px; height: 15px; transition: transform .18s ease; }
+.mood-detail a:hover svg { transform: translateX(3px); }
+.page-state { padding-block: 26px; color: var(--wl-muted); }
+.page-state button { font: inherit; cursor: pointer; }
+:is(.mood-item, a):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.segment:focus-visible { z-index: 1; outline: 2px solid #fff; outline-offset: -4px; }
+@media (max-width: 630px) {
+  .mood-layout { grid-template-columns: minmax(0, 1fr); }
+  .mood-detail { grid-row: 1; padding: 0 0 14px; border: 0; border-bottom: 1px solid var(--rule); }
+  .detail-value { margin-bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mood-page :is(.distribution, .segment, .mood-item, .detail-name i, .detail-value, svg) { animation: none; transition: none; }
 }
 </style>
