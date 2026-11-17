@@ -2,18 +2,21 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
-import { ArrowRight, ArrowLeft, Compass, EditPen, Search } from '@element-plus/icons-vue'
+import { ArrowRight, ArrowLeft, Compass, EditPen, Search, CollectionTag } from '@element-plus/icons-vue'
 import RippleCard from '@/components/RippleCard.vue'
 import CommunityPulse from '@/components/CommunityPulse.vue'
 import heroImage from '@/assets/ripple-dawn.webp'
-import { listRipples, listFollowingRipples, getHotTides, getMoodSummary } from '@/api/ripples'
-import type { CollectionOut, LikeOut, MoodOut, RippleOut, TideOut } from '@/api/types'
+import { listRipples, listFollowingRipples, listSubscribedTopicRipples, getHotTides, getMoodSummary } from '@/api/ripples'
+import { getTopic, getSubscribedTopics, setTopicSubscription, type TopicDetail } from '@/api/topics'
+import type { CollectionOut, LikeOut, MoodOut, RippleOut, TideOut, TopicOut } from '@/api/types'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const exploring = computed(() => route.name === 'explore')
+const topicPage = computed(() => route.name === 'topic')
+const detailedFilters = computed(() => exploring.value || topicPage.value)
 const ripples = ref<RippleOut[]>([])
 const tides = ref<TideOut[]>([])
 const moods = ref<MoodOut[]>([])
@@ -25,6 +28,13 @@ const keyword = ref('')
 const results = ref<HTMLElement>()
 const pageSize = 10
 let requestVersion = 0
+let detailVersion = 0
+let subscriptionsVersion = 0
+const topicDetail = ref<TopicDetail | null>(null)
+const topicLoading = ref(false)
+const topicError = ref('')
+const changingSubscription = ref(false)
+const subscriptions = ref<TopicOut[]>([])
 
 function stringQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
@@ -35,24 +45,29 @@ function positiveId(value: string) {
   return Number.isSafeInteger(number) && number > 0 ? number : undefined
 }
 
-const topic = computed(() => positiveId(stringQuery(route.query.topic)))
-const mood = computed(() => exploring.value ? stringQuery(route.query.mood) : '')
-const hasImages = computed(() => exploring.value && route.query.images === '1')
-const feed = computed(() => !exploring.value && route.query.feed === 'following' ? 'following' : 'all')
+const topic = computed(() => positiveId(stringQuery(topicPage.value ? route.params.id : route.query.topic)))
+const mood = computed(() => detailedFilters.value ? stringQuery(route.query.mood) : '')
+const hasImages = computed(() => detailedFilters.value && route.query.images === '1')
+const feed = computed(() => {
+  const value = route.query.feed
+  if (route.name === 'home' && (value === 'following' || value === 'subscribed')) return value
+  return 'all'
+})
+const topicChoices = computed(() => feed.value === 'subscribed' ? subscriptions.value : tides.value.map(item => item.topic))
 const sort = computed(() => {
   const value = route.query.sort
-  return exploring.value && (value === 'discussed' || value === 'liked') ? value : 'latest'
+  return detailedFilters.value && (value === 'discussed' || value === 'liked') ? value : 'latest'
 })
 const submittedKeyword = computed(() => stringQuery(route.query.q).trim().slice(0, 100))
 const page = computed(() => Math.min(100000, positiveId(stringQuery(route.query.page)) ?? 1))
-const filtered = computed(() => !!(topic.value || mood.value || hasImages.value || submittedKeyword.value || sort.value !== 'latest'))
+const filtered = computed(() => !!((!topicPage.value && topic.value) || mood.value || hasImages.value || submittedKeyword.value || sort.value !== 'latest'))
 
 function changeFilters(query: LocationQueryRaw) {
-  void router.push({ name: exploring.value ? 'explore' : 'home', query: { ...route.query, page: undefined, ...query } })
+  void router.push({ path: route.path, query: { ...route.query, page: undefined, ...query } })
 }
 
 function clearFilters() {
-  void router.push({ name: exploring.value ? 'explore' : 'home', query: feed.value === 'following' ? { feed: 'following' } : {} })
+  void router.push({ path: route.path, query: feed.value === 'all' ? {} : { feed: feed.value } })
 }
 
 async function goToPage(target: number) {
@@ -62,10 +77,16 @@ async function goToPage(target: number) {
 
 async function loadRipples() {
   const version = ++requestVersion
+  if (topicPage.value && !topic.value) {
+    ripples.value = []
+    loading.value = false
+    return
+  }
   loading.value = true
   failed.value = false
   try {
-    const load = feed.value === 'following' ? listFollowingRipples : listRipples
+    const loaders = { all: listRipples, following: listFollowingRipples, subscribed: listSubscribedTopicRipples }
+    const load = loaders[feed.value]
     const items = await load({
       topic_id: topic.value,
       keyword: submittedKeyword.value || undefined,
@@ -85,6 +106,61 @@ async function loadRipples() {
   }
 }
 
+async function loadTopic() {
+  const version = ++detailVersion
+  const id = topic.value
+  topicDetail.value = null
+  topicError.value = ''
+  changingSubscription.value = false
+  topicLoading.value = false
+  if (!topicPage.value) return
+  if (!id) {
+    topicError.value = '话题不存在'
+    return
+  }
+  topicLoading.value = true
+  try {
+    const detail = await getTopic(id)
+    if (version === detailVersion) topicDetail.value = detail
+  } catch (error) {
+    if (version !== detailVersion) return
+    topicError.value = (error as { response?: { status?: number } }).response?.status === 404
+      ? '话题不存在' : '话题加载失败'
+  } finally {
+    if (version === detailVersion) topicLoading.value = false
+  }
+}
+
+async function toggleSubscription() {
+  const detail = topicDetail.value
+  if (!detail || changingSubscription.value) return
+  const version = detailVersion
+  changingSubscription.value = true
+  try {
+    const subscribe = !detail.is_subscribed
+    await setTopicSubscription(detail.id, subscribe)
+    if (version === detailVersion) detail.is_subscribed = subscribe
+    if (feed.value === 'subscribed') {
+      void loadSubscriptions()
+      void loadRipples()
+    }
+  } catch { /* 请求失败时保留当前状态，由请求拦截器提示。 */ }
+  finally {
+    if (version === detailVersion) changingSubscription.value = false
+  }
+}
+
+async function loadSubscriptions() {
+  const version = ++subscriptionsVersion
+  if (feed.value !== 'subscribed') return
+  try {
+    const items = await getSubscribedTopics()
+    if (version === subscriptionsVersion) subscriptions.value = items
+  } catch {
+    if (version === subscriptionsVersion) subscriptions.value = []
+  }
+}
+
 function updateLike(state: LikeOut) {
   const ripple = ripples.value.find((item) => item.id === state.ripple_id)
   if (ripple) {
@@ -99,7 +175,9 @@ function updateCollection(state: CollectionOut) {
 }
 
 watch(submittedKeyword, (value) => { keyword.value = value }, { immediate: true })
-watch([feed, topic, mood, hasImages, sort, submittedKeyword, page], loadRipples, { immediate: true })
+watch([feed, topicPage, topic, mood, hasImages, sort, submittedKeyword, page], loadRipples, { immediate: true })
+watch([topicPage, topic], loadTopic, { immediate: true })
+watch(feed, loadSubscriptions, { immediate: true })
 onMounted(async () => {
   await Promise.allSettled([
     getHotTides().then((items) => { tides.value = items }),
@@ -107,12 +185,16 @@ onMounted(async () => {
   ])
   loadingPulse.value = false
 })
-onBeforeUnmount(() => { requestVersion++ })
+onBeforeUnmount(() => {
+  requestVersion++
+  detailVersion++
+  subscriptionsVersion++
+})
 </script>
 
 <template>
   <div class="community">
-    <section v-if="!exploring" class="welcome">
+    <section v-if="!detailedFilters" class="welcome">
       <img :src="heroImage" alt="" fetchpriority="high" class="welcome-image" />
       <div class="welcome-copy">
         <p class="welcome-eyebrow">微澜社区</p>
@@ -125,18 +207,40 @@ onBeforeUnmount(() => { requestVersion++ })
       </div>
     </section>
 
-    <div v-else class="explore-heading">
+    <div v-else-if="exploring" class="explore-heading">
       <div class="explore-icon"><Compass aria-hidden="true" /></div>
       <div><h1>探索微澜</h1><p>按话题和情绪挑选内容，或从讨论最多的微澜开始。</p></div>
+      <router-link :to="{ name: 'tide' }" class="topic-back explore-topics">查看全部话题</router-link>
     </div>
+    <section v-else class="explore-heading topic-heading" :aria-busy="topicLoading">
+      <div class="explore-icon"><CollectionTag aria-hidden="true" /></div>
+      <div v-if="topicDetail">
+        <router-link :to="{ name: 'explore' }" class="topic-back">探索微澜</router-link>
+        <h1># {{ topicDetail.name }}</h1>
+        <p v-if="topicDetail.description">{{ topicDetail.description }}</p>
+      </div>
+      <div v-else>
+        <h1>{{ topicError || '正在读取话题…' }}</h1>
+        <router-link :to="{ name: 'explore' }" class="topic-back">返回探索</router-link>
+        <button v-if="topicError === '话题加载失败'" class="reset-button" type="button" @click="loadTopic">重试</button>
+      </div>
+      <div v-if="topicDetail" class="topic-actions">
+        <el-button type="primary" :plain="topicDetail.is_subscribed" :loading="changingSubscription"
+          @click="toggleSubscription">{{ topicDetail.is_subscribed ? '取消订阅' : '订阅话题' }}</el-button>
+        <router-link v-if="userStore.user?.role === 'user'"
+          :to="{ name: 'compose', query: { topic: String(topicDetail.id) } }">发布到此话题</router-link>
+        <router-link v-if="topicDetail.is_subscribed" :to="{ name: 'home', query: { feed: 'subscribed' } }">我的订阅</router-link>
+      </div>
+    </section>
 
-    <div class="community-grid">
-      <section ref="results" class="timeline" :aria-label="exploring ? '探索结果' : '时间线'">
+    <div v-if="!topicPage || topicDetail" class="community-grid">
+      <section ref="results" class="timeline" :aria-label="detailedFilters ? '微澜列表' : '时间线'">
         <div class="feed-heading">
-          <h2>{{ exploring ? '浏览微澜' : '社区时间线' }}</h2>
-          <div v-if="!exploring" class="feed-switch" aria-label="时间线范围">
-            <button type="button" :aria-pressed="feed === 'all'" @click="changeFilters({ feed: undefined })">全部微澜</button>
-            <button type="button" :aria-pressed="feed === 'following'" @click="changeFilters({ feed: 'following' })">我关注的</button>
+          <h2>{{ topicPage ? '话题微澜' : exploring ? '浏览微澜' : '社区时间线' }}</h2>
+          <div v-if="!detailedFilters" class="feed-switch" aria-label="时间线范围">
+            <button type="button" :aria-pressed="feed === 'all'" @click="changeFilters({ feed: undefined, topic: undefined })">全部微澜</button>
+            <button type="button" :aria-pressed="feed === 'following'" @click="changeFilters({ feed: 'following', topic: undefined })">关注的人</button>
+            <button type="button" :aria-pressed="feed === 'subscribed'" @click="changeFilters({ feed: 'subscribed', topic: undefined })">订阅的话题</button>
           </div>
           <button v-else-if="filtered" class="reset-button" type="button" @click="clearFilters">清除筛选</button>
         </div>
@@ -148,14 +252,16 @@ onBeforeUnmount(() => { requestVersion++ })
             <button type="submit">搜索</button>
           </form>
 
-          <div v-if="exploring" class="explore-filters">
-            <label>话题
+          <div v-if="detailedFilters" class="explore-filters">
+            <label v-if="exploring">话题
               <select :value="topic ?? ''" @change="changeFilters({ topic: ($event.target as HTMLSelectElement).value || undefined })">
                 <option value="">全部话题</option>
                 <option v-if="topic && !tides.some(item => item.topic.id === topic)" :value="topic">话题 {{ topic }}</option>
                 <option v-for="item in tides" :key="item.topic.id" :value="item.topic.id">{{ item.topic.name }}</option>
               </select>
             </label>
+            <router-link v-if="exploring && topic && tides.some(item => item.topic.id === topic)"
+              class="topic-back topic-open" :to="{ name: 'topic', params: { id: topic } }">进入话题</router-link>
             <label>情绪
               <select :value="mood" @change="changeFilters({ mood: ($event.target as HTMLSelectElement).value || undefined })">
                 <option value="">全部情绪</option>
@@ -172,9 +278,11 @@ onBeforeUnmount(() => { requestVersion++ })
             </label>
             <label class="image-filter"><input type="checkbox" :checked="hasImages" @change="changeFilters({ images: hasImages ? undefined : '1' })" />仅看配图</label>
           </div>
-          <div v-else-if="tides.length" class="topic-chips" aria-label="按话题筛选">
+          <div v-else-if="topicChoices.length" class="topic-chips" aria-label="按话题筛选">
             <button type="button" class="chip" :aria-pressed="!topic" @click="changeFilters({ topic: undefined })">全部话题</button>
-            <button v-for="item in tides" :key="item.topic.id" type="button" class="chip" :aria-pressed="topic === item.topic.id" @click="changeFilters({ topic: String(item.topic.id) })"># {{ item.topic.name }}</button>
+            <button v-for="item in topicChoices" :key="item.id" type="button" class="chip" :aria-pressed="topic === item.id" @click="changeFilters({ topic: String(item.id) })"># {{ item.name }}</button>
+            <router-link v-if="feed === 'subscribed' && topic && subscriptions.some(item => item.id === topic)"
+              class="topic-back topic-open" :to="{ name: 'topic', params: { id: topic } }">进入话题</router-link>
           </div>
         </div>
 
@@ -184,7 +292,7 @@ onBeforeUnmount(() => { requestVersion++ })
           <template v-else>
             <RippleCard v-for="ripple in ripples" :key="ripple.id" :ripple="ripple" @like-updated="updateLike" @collection-updated="updateCollection" />
             <div v-if="!ripples.length" class="card feed-notice">
-              <p>{{ filtered ? '没有符合筛选条件的微澜。' : feed === 'following' ? '关注的作者暂时没有公开微澜。' : '这里还没有公开的微澜。' }}</p>
+              <p>{{ filtered ? '没有符合筛选条件的微澜。' : feed === 'following' ? '关注的作者暂时没有公开微澜。' : feed === 'subscribed' ? '订阅的话题暂时没有公开微澜，去探索更多话题吧。' : '这里还没有公开的微澜。' }}</p>
               <button v-if="filtered" type="button" @click="clearFilters">清除筛选</button>
               <router-link v-else-if="!exploring" to="/explore">探索社区</router-link>
             </div>
@@ -246,6 +354,11 @@ button, input, select { font: inherit; }
 .explore-heading p { margin: 4px 0 0; font-size: 14px; color: var(--wl-muted); }
 .explore-icon { display: grid; place-items: center; width: 52px; height: 52px; flex: 0 0 52px; border-radius: 13px; background: #d3e8d9; color: #236358; }
 .explore-icon svg { width: 27px; height: 27px; }
+.topic-heading { flex-wrap: wrap; }
+.topic-actions { margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.topic-back, .topic-actions a { color: var(--wl-primary); font-size: 13px; text-underline-offset: 3px; }
+.explore-topics { margin-left: auto; flex: 0 0 auto; }
+.topic-open { align-self: end; padding: 7px; }
 .explore-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
 .explore-filters label { display: grid; gap: 5px; color: var(--wl-muted); font-size: 12px; }
 .explore-filters select { max-width: 100%; padding: 7px 9px; border: 1px solid var(--wl-border); border-radius: 7px; background: #f7faf7; color: var(--wl-ink); }
@@ -255,6 +368,8 @@ button, input, select { font: inherit; }
   .community-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
 }
 @media (max-width: 520px) {
+  .explore-heading { flex-wrap: wrap; }
+  .explore-topics { margin-left: 0; }
   .welcome { border-radius: 15px; margin-bottom: 20px; }
   .welcome-copy { padding-block: 28px; }
   .welcome-image { object-position: 56% center; }

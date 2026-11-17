@@ -33,7 +33,7 @@ function trendColor(trend: string): string {
       <div v-for="t in tides" :key="t.topic.id" class="card tide-item">
         <div class="tide-head">
           <span class="tide-rank">{{ tides.indexOf(t) + 1 }}</span>
-          <span class="tide-name"># {{ t.topic.name }}</span>
+          <router-link class="tide-name" :to="{ name: 'topic', params: { id: t.topic.id } }"># {{ t.topic.name }}</router-link>
           <span class="tide-trend" :style="{ color: trendColor(t.trend) }">
             {{ t.trend }} {{ t.heat }}
           </span>

@@ -14,7 +14,7 @@ defineProps<{ tides: TideOut[]; moods: MoodOut[]; loading: boolean }>()
       </div>
       <ol v-if="tides.length" class="pulse-topics">
         <li v-for="(item, index) in tides.slice(0, 5)" :key="item.topic.id">
-          <router-link :to="{ name: 'explore', query: { topic: String(item.topic.id) } }">
+          <router-link :to="{ name: 'topic', params: { id: item.topic.id } }">
             <span class="topic-rank">{{ String(index + 1).padStart(2, '0') }}</span>
             <span>{{ item.topic.name }}</span>
             <span class="topic-score" :aria-label="`热度 ${item.heat}`">{{ item.heat }}</span>

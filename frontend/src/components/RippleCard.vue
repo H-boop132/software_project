@@ -127,7 +127,7 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
     />
 
     <div class="rc-foot">
-      <router-link v-if="ripple.topic" :to="{ name: 'explore', query: { topic: String(ripple.topic.id) } }" class="rc-topic"># {{ ripple.topic.name }}</router-link>
+      <router-link v-if="ripple.topic" :to="{ name: 'topic', params: { id: ripple.topic.id } }" class="rc-topic"># {{ ripple.topic.name }}</router-link>
       <router-link :to="`/ripples/${ripple.id}`" class="rc-stat" :aria-label="`查看回声，共 ${ripple.echo_count} 条`"><ChatDotRound aria-hidden="true" />{{ ripple.echo_count }}</router-link>
       <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
       <CollectionButton :ripple="ripple" @updated="emit('collection-updated', $event)" />

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { createRipple, getHotTides } from '@/api/ripples'
@@ -8,6 +8,7 @@ import { uploadImage } from '@/api/upload'
 import type { TopicOut } from '@/api/types'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const content = ref('')
@@ -163,9 +164,14 @@ async function submit() {
 }
 
 onMounted(async () => {
+  const accountDraft = draftKey.value
+  const currentTopic = topicId.value
+  const requestedTopic = typeof route.query.topic === 'string' ? Number(route.query.topic) : undefined
   try {
     const tides = await getHotTides()
     topics.value = tides.map((t) => t.topic)
+    const match = topics.value.find((topic) => topic.id === requestedTopic)
+    if (match && accountDraft === draftKey.value && topicId.value === currentTopic) topicId.value = match.id
   } catch {
     /* 忽略 */
   }

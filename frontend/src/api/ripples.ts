@@ -28,6 +28,10 @@ export function listFollowingRipples(params: RippleListParams = {}) {
   return request.get<unknown, RippleOut[]>('/ripples/following', { params })
 }
 
+export function listSubscribedTopicRipples(params: RippleListParams = {}) {
+  return request.get<unknown, RippleOut[]>('/ripples/subscribed-topics', { params })
+}
+
 export function createRipple(data: RipplePayload) {
   return request.post<unknown, RippleOut>('/ripples', data)
 }

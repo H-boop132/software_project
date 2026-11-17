@@ -184,7 +184,7 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
           />
         </div>
         <div class="rc-foot">
-          <span v-if="detail.ripple.topic" class="rc-topic"># {{ detail.ripple.topic.name }}</span>
+          <router-link v-if="detail.ripple.topic" class="rc-topic" :to="{ name: 'topic', params: { id: detail.ripple.topic.id } }"># {{ detail.ripple.topic.name }}</router-link>
           <span>💬 {{ detail.ripple.echo_count }}</span>
           <LikeButton :ripple="detail.ripple" @updated="updateLike" />
           <CollectionButton :ripple="detail.ripple" @updated="updateCollection" />
