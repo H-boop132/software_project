@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Star, StarFilled } from '@element-plus/icons-vue'
 import type { EchoOut } from '@/api/types'
 import { setEchoLike } from '@/api/ripples'
 import { MAX_ECHO_DEPTH } from '@/constants/limits'
@@ -40,11 +39,14 @@ async function toggleLike() {
       <p>{{ echo.content }}</p>
       <div class="echo-actions">
         <el-button link type="primary" :disabled="!interactive || depth >= MAX_ECHO_DEPTH" :aria-label="`回复 ${echo.user.nickname}`" @click="emit('reply', echo)">回复</el-button>
-        <el-button link :type="echo.is_liked ? 'primary' : 'info'" :disabled="!interactive || liking"
-          :aria-label="`${echo.is_liked ? '取消点赞' : '点赞'}这条回声，当前 ${echo.like_count} 个赞`" @click="toggleLike">
-          <el-icon><StarFilled v-if="echo.is_liked" /><Star v-else /></el-icon>
-          <span class="like-label">{{ echo.like_count ? echo.like_count : '点赞' }}</span>
-        </el-button>
+        <button type="button" class="echo-like" :class="{ liked: echo.is_liked }"
+          :disabled="!interactive || liking" :aria-pressed="echo.is_liked" :aria-busy="liking"
+          :aria-label="`${echo.is_liked ? '取消点赞' : '点赞'}这条回声，当前 ${echo.like_count} 个赞`"
+          @click.stop="toggleLike">
+          <span aria-hidden="true">{{ echo.is_liked ? '♥' : '♡' }}</span>
+          {{ liking ? '处理中…' : echo.is_liked ? '已点赞' : '点赞' }}
+          <span class="like-count">{{ echo.like_count }}</span>
+        </button>
         <el-button v-if="canDelete" link type="danger" :disabled="!interactive" :aria-label="`删除回声 ${echo.id}`" @click="emit('remove', echo)">删除</el-button>
         <el-button v-if="echo.children.length" link @click="collapsed = !collapsed" :aria-expanded="!collapsed">{{ collapsed ? '展开回复' : '收起回复' }}（{{ echo.children.length }}）</el-button>
       </div>
@@ -66,7 +68,16 @@ async function toggleLike() {
 .echo-body p { font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
 .reply-target { font-size: 12.5px; color: var(--wl-muted); margin: 0 0 -2px; }
 .reply-target a { color: var(--wl-primary); text-decoration: none; }
-.like-label { margin-left: 4px; }
+.echo-like {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid transparent; border-radius: 6px; padding: 3px 7px;
+  background: transparent; color: #607d8b; font: inherit; cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.echo-like:hover:not(:disabled), .echo-like.liked { background: #fff0f3; color: #c33859; }
+.echo-like:focus-visible { outline: 2px solid var(--wl-primary); outline-offset: 2px; }
+.echo-like:disabled { opacity: 0.6; cursor: not-allowed; }
+.like-count { min-width: 1ch; font-variant-numeric: tabular-nums; }
 .echo-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .echo-children { margin: 10px 0 0 10px; padding-left: 16px; border-left: 2px solid #b8dce3; }
 .echo-children > .echo-node::before { content: ''; position: absolute; left: -16px; top: 22px; width: 15px; border-top: 2px solid #b8dce3; }
