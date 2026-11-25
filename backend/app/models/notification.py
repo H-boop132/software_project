@@ -16,5 +16,10 @@ class Notification(Base):
     kind: Mapped[str] = mapped_column(String(12))
     echo_id: Mapped[int | None] = mapped_column(ForeignKey("echoes.id", ondelete="CASCADE"), unique=True)
     follow_id: Mapped[int | None] = mapped_column(ForeignKey("follows.id", ondelete="CASCADE"), unique=True)
+    ripple_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ripples.id", ondelete="SET NULL"), default=None,
+        comment="关联微澜（内容处理通知）",
+    )
+    note: Mapped[str | None] = mapped_column(String(200), default=None, comment="处理说明（封禁/驳回原因等）")
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     read_at: Mapped[datetime | None]

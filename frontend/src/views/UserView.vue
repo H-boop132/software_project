@@ -93,7 +93,10 @@ onBeforeUnmount(() => { version++ })
     <template v-if="profile">
       <section class="card user-profile">
         <div class="user-heading">
-          <div class="avatar">{{ profile.nickname.slice(0, 1) }}</div>
+          <div class="avatar">
+            <img v-if="profile.avatar_url" :src="profile.avatar_url" alt="" class="avatar-img" />
+            <template v-else>{{ profile.nickname.slice(0, 1) }}</template>
+          </div>
           <div><h1>{{ profile.nickname }}</h1><span>@{{ profile.username }}</span></div>
           <FollowButton :profile="profile" @updated="updateProfile" />
           <router-link v-if="profile.id === store.user?.id" to="/profile">我的个人中心</router-link>
@@ -123,7 +126,8 @@ onBeforeUnmount(() => { version++ })
 .user-heading h1 { margin: 0 0 5px; font-size: 22px; }
 .user-heading span { color: #78909c; font-size: 13px; }
 .user-profile p { color: #546e7a; }
-.avatar { width: 60px; height: 60px; border-radius: 50%; background: var(--wl-primary); color: white; display: grid; place-items: center; font-size: 24px; }
+.avatar { width: 60px; height: 60px; border-radius: 50%; background: var(--wl-primary); color: white; display: grid; place-items: center; font-size: 24px; overflow: hidden; }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .relations-summary { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .relations-summary button { border: 0; background: transparent; color: var(--wl-primary); cursor: pointer; padding: 6px 0; font: inherit; }
 .relations-summary span { color: #78909c; font-size: 13px; }

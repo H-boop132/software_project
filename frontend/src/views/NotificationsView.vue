@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, ChatDotRound, User } from '@element-plus/icons-vue'
+import { Bell, ChatDotRound, User, Warning } from '@element-plus/icons-vue'
 import {
   fetchNotifications, markAllNotificationsRead, markNotificationRead,
   type NotificationItem, type NotificationKind,
@@ -23,9 +23,15 @@ const descriptions = {
   echo: '回应了你的微澜',
   reply: '回复了你的回声',
   follow: '关注了你',
+  moderation: '处理了你的内容',
 }
 
 function destination(item: NotificationItem) {
+  if (item.kind === 'moderation') {
+    return item.ripple_id !== null
+      ? { name: 'ripple-detail', params: { id: item.ripple_id } }
+      : { name: 'profile' }
+  }
   if (item.ripple_id !== null && item.echo_id !== null) {
     return { name: 'ripple-detail', params: { id: item.ripple_id }, hash: `#echo-${item.echo_id}` }
   }
@@ -98,6 +104,7 @@ onBeforeUnmount(() => { loadVersion++ })
           <option value="echo">回应微澜</option>
           <option value="reply">回复回声</option>
           <option value="follow">新关注</option>
+          <option value="moderation">内容处理</option>
         </select>
       </label>
       <label><input v-model="unreadOnly" type="checkbox" /> 仅看未读</label>
@@ -107,10 +114,11 @@ onBeforeUnmount(() => { loadVersion++ })
       <li v-for="item in items" :key="item.id" :class="{ unread: !item.read_at }">
         <router-link :to="destination(item)" custom v-slot="{ href }">
           <a :href="href" class="inbox-item" @click="openMessage($event, item)">
-            <span class="item-icon"><component :is="item.kind === 'follow' ? User : ChatDotRound" aria-hidden="true" /></span>
+            <span class="item-icon"><component :is="item.kind === 'follow' ? User : item.kind === 'moderation' ? Warning : ChatDotRound" aria-hidden="true" /></span>
             <span class="item-copy">
               <span><strong>{{ item.actor_name }}</strong> {{ descriptions[item.kind] }}<span v-if="!item.read_at" class="unread-dot" title="未读">未读</span></span>
-              <span v-if="item.preview" class="preview">{{ item.preview }}</span>
+              <span v-if="item.note" class="preview note">{{ item.note }}</span>
+              <span v-else-if="item.preview" class="preview">{{ item.preview }}</span>
               <time :datetime="item.created_at">{{ new Date(item.created_at).toLocaleString('zh-CN') }}</time>
             </span>
           </a>
@@ -119,7 +127,7 @@ onBeforeUnmount(() => { loadVersion++ })
     </ul>
     <p v-if="loading" class="card empty-tip" role="status">正在加载消息…</p>
     <div v-else-if="failed" class="card empty-tip"><p>消息加载失败。</p><el-button @click="load()">重试</el-button></div>
-    <p v-else-if="!items.length" class="card empty-tip">{{ filter || unreadOnly ? '没有符合条件的消息' : '暂无消息。收到回声、回复或关注后会在这里显示。' }}</p>
+    <p v-else-if="!items.length" class="card empty-tip">{{ filter || unreadOnly ? '没有符合条件的消息' : '暂无消息。收到回声、回复、关注或内容处理结果后会在这里显示。' }}</p>
     <div v-if="nextBefore && !failed" class="load-more"><el-button :loading="loading" @click="load(true)">加载更早的消息</el-button></div>
   </section>
 </template>
@@ -142,6 +150,7 @@ onBeforeUnmount(() => { loadVersion++ })
 .inbox-item:focus-visible { outline-offset: -3px; }
 .item-copy { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .preview { white-space: pre-wrap; font-size: 14px; }
+.note { color: #8a5a2b; background: #fdf6ec; border-radius: 7px; padding: 7px 9px; }
 .item-copy time { color: var(--wl-muted); font-size: 12px; }
 .unread-dot { display: inline-block; margin-left: 7px; border-radius: 8px; padding: 2px 6px; background: #dbece1; color: #265a4c; font-size: 11px; }
 .load-more { text-align: center; }

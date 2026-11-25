@@ -11,6 +11,16 @@ from app.services.moderation_service import auto_unban, ban_message, is_banned
 _bearer = HTTPBearer(auto_error=False)
 
 
+def _user_id_from_subject(subject: str | None) -> int | None:
+    """把 JWT 的 sub 转成用户 id；非数字 subject 视为非法令牌，而不是抛 500。"""
+    if not subject:
+        return None
+    try:
+        return int(subject)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_current_user(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
@@ -24,7 +34,10 @@ def get_current_user(
     subject = decode_access_token(cred.credentials)
     if subject is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效")
-    user = db.get(User, int(subject))
+    user_id = _user_id_from_subject(subject)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效")
+    user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
 
@@ -43,9 +56,10 @@ def get_optional_user(
     if cred is None:
         return None
     subject = decode_access_token(cred.credentials)
-    if subject is None:
+    user_id = _user_id_from_subject(subject)
+    if user_id is None:
         return None
-    return db.get(User, int(subject))
+    return db.get(User, user_id)
 
 
 def get_current_admin(user: User = Depends(get_current_user)) -> User:

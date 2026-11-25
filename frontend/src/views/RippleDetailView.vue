@@ -11,6 +11,7 @@ import LikeButton from '@/components/LikeButton.vue'
 import CollectionButton from '@/components/CollectionButton.vue'
 import EchoNode from '@/components/EchoNode.vue'
 import EchoTreeMap from '@/components/EchoTreeMap.vue'
+import { MAX_ECHO_DEPTH } from '@/constants/limits'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -222,7 +223,7 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
             <span>{{ formatTime(selectedEcho.created_at) }}</span>
           </div>
           <p>{{ selectedEcho.content }}</p>
-          <el-button type="primary" :disabled="!interactive || depthOf(selectedEcho.id) >= 8" @click="reply(selectedEcho)">回复此回声</el-button>
+          <el-button type="primary" :disabled="!interactive || depthOf(selectedEcho.id) >= MAX_ECHO_DEPTH" @click="reply(selectedEcho)">回复此回声</el-button>
           <el-button v-if="canDeleteSelected" type="danger" plain :disabled="!interactive" @click="removeEcho(selectedEcho)">删除此回声</el-button>
         </article>
       </template>
@@ -240,7 +241,7 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
           </el-select>
           <el-button type="primary" :loading="posting" :disabled="!interactive || !content.trim()" @click="submitEcho">{{ replyTarget ? '发送回复' : '发表回声' }}</el-button>
         </div>
-        <small>支持最多 8 层回复，点击作者昵称可进入主页。</small>
+        <small>支持最多 {{ MAX_ECHO_DEPTH }} 层回复，点击作者昵称可进入主页。</small>
       </section>
       <p v-else class="empty-tip">当前微澜未公开，回声仅供查看。</p>
     </template>

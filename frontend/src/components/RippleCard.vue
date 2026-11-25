@@ -64,7 +64,10 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
 <template>
   <div class="card ripple-card">
     <div class="rc-head">
-      <router-link :to="`/users/${ripple.user.id}`" class="rc-avatar" :aria-label="ripple.user.nickname">{{ ripple.user.nickname.slice(0, 1) }}</router-link>
+      <router-link :to="`/users/${ripple.user.id}`" class="rc-avatar" :aria-label="ripple.user.nickname">
+        <img v-if="ripple.user.avatar_url" :src="ripple.user.avatar_url" alt="" class="rc-avatar-img" />
+        <template v-else>{{ ripple.user.nickname.slice(0, 1) }}</template>
+      </router-link>
       <div class="rc-author">
         <router-link :to="`/users/${ripple.user.id}`" class="rc-nickname">{{ ripple.user.nickname }}</router-link>
         <time class="rc-time" :datetime="ripple.created_at">{{ formatTime(ripple.created_at) }}</time>
@@ -153,7 +156,8 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
   margin-bottom: 8px;
 }
 
-.rc-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; display: grid; place-items: center; background: #e7f1e8; color: var(--wl-primary); font-size: 14px; font-weight: 600; text-decoration: none; }
+.rc-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; display: grid; place-items: center; background: #e7f1e8; color: var(--wl-primary); font-size: 14px; font-weight: 600; text-decoration: none; overflow: hidden; }
+.rc-avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .rc-author { display: grid; gap: 2px; min-width: 0; }
 
 .rc-nickname {

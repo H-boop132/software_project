@@ -71,7 +71,7 @@ function logout() {
               <Bell aria-hidden="true" />
               <span v-if="notifications.unread" class="notification-badge" aria-hidden="true">{{ notifications.unread > 99 ? '99+' : notifications.unread }}</span>
             </router-link>
-            <router-link to="/profile" class="user-chip" :title="user.nickname"><span class="user-initial" aria-hidden="true">{{ user.nickname.slice(0, 1) }}</span><span class="user-name">{{ user.nickname }}</span></router-link>
+            <router-link to="/profile" class="user-chip" :title="user.nickname"><span class="user-initial" aria-hidden="true"><img v-if="user.avatar_url" :src="user.avatar_url" alt="" /><template v-else>{{ user.nickname.slice(0, 1) }}</template></span><span class="user-name">{{ user.nickname }}</span></router-link>
             <el-button link type="primary" @click="logout">退出</el-button>
           </template>
           <template v-else>

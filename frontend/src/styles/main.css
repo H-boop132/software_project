@@ -138,7 +138,8 @@ body {
   font-size: 14px;
 }
 
-.user-initial { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e5efe7; }
+.user-initial { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e5efe7; overflow: hidden; }
+.user-initial img { width: 100%; height: 100%; object-fit: cover; }
 .user-name { max-width: 108px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 
 /* 主区域 */

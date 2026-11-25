@@ -7,12 +7,16 @@ import {
   banUser,
   deleteRipple,
   getAdminStats,
+  getReviewHistory,
   listAdminRipples,
   listAdminUsers,
   listPendingReviews,
   rejectRipple,
   unbanUser,
+  type AdminRippleStatus,
   type AdminStats,
+  type AdminUserStatus,
+  type ReviewLog,
 } from '@/api/admin'
 import type { RippleOut, UserOut } from '@/api/types'
 
@@ -22,11 +26,19 @@ const stats = ref<AdminStats | null>(null)
 const users = ref<UserOut[]>([])
 const ripples = ref<RippleOut[]>([])
 const reviews = ref<RippleOut[]>([])
+const reviewLogs = ref<ReviewLog[]>([])
 const loading = ref(false)
+const loadingUsers = ref(false)
 const loadingRipples = ref(false)
+const loadingLogs = ref(false)
 
-/* ---------------- 内容筛选（关键词 + 发布时间范围） ---------------- */
+/* ---------------- 用户筛选（关键词 + 封禁状态） ---------------- */
+const userKeyword = ref('')
+const userStatus = ref<AdminUserStatus | ''>('')
+
+/* ---------------- 内容筛选（关键词 + 状态 + 发布时间范围） ---------------- */
 const rippleKeyword = ref('')
+const rippleStatus = ref<AdminRippleStatus | ''>('')
 const rippleRange = ref<[string, string] | null>(null)
 
 const rangeShortcuts = [
@@ -63,6 +75,7 @@ async function loadRipples() {
     ripples.value = await listAdminRipples({
       limit: 100,
       ...(rippleKeyword.value.trim() ? { keyword: rippleKeyword.value.trim() } : {}),
+      ...(rippleStatus.value ? { status: rippleStatus.value } : {}),
       ...(rippleRange.value ? { start: rippleRange.value[0], end: rippleRange.value[1] } : {}),
     })
   } finally {
@@ -72,6 +85,33 @@ async function loadRipples() {
 
 function searchRipples() {
   loadRipples()
+}
+
+/* ---------------- 用户列表 / 审核记录 ---------------- */
+async function loadUsers() {
+  loadingUsers.value = true
+  try {
+    users.value = await listAdminUsers({
+      limit: 100,
+      ...(userKeyword.value.trim() ? { keyword: userKeyword.value.trim() } : {}),
+      ...(userStatus.value ? { status: userStatus.value } : {}),
+    })
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
+function searchUsers() {
+  loadUsers()
+}
+
+async function loadReviewLogs() {
+  loadingLogs.value = true
+  try {
+    reviewLogs.value = await getReviewHistory({ limit: 100 })
+  } finally {
+    loadingLogs.value = false
+  }
 }
 
 /* ---------------- 封禁弹窗 ---------------- */
@@ -95,7 +135,7 @@ function formatTime(iso: string | null): string {
   return new Date(iso).toLocaleString('zh-CN')
 }
 
-function rippleStatus(row: RippleOut) {
+function rippleStatusMeta(row: RippleOut) {
   const map: Record<string, { type: 'success' | 'danger' | 'warning' | 'info'; text: string }> = {
     published: { type: 'success', text: '已发布' },
     banned: { type: 'danger', text: '已封禁' },
@@ -104,16 +144,23 @@ function rippleStatus(row: RippleOut) {
   return map[row.status] || { type: 'info', text: row.status }
 }
 
+function reviewAction(action: string) {
+  const map: Record<string, { type: 'success' | 'danger' | 'warning' | 'info'; text: string }> = {
+    ban: { type: 'danger', text: '封禁' },
+    reject: { type: 'warning', text: '驳回' },
+    approve: { type: 'success', text: '通过' },
+  }
+  return map[action] || { type: 'info', text: action }
+}
+
 async function loadBase() {
   loading.value = true
   try {
-    const [s, u, rv] = await Promise.all([
+    const [s, rv] = await Promise.all([
       getAdminStats(),
-      listAdminUsers({ limit: 100 }),
       listPendingReviews({ limit: 100 }),
     ])
     stats.value = s
-    users.value = u
     reviews.value = rv
   } finally {
     loading.value = false
@@ -137,20 +184,23 @@ async function confirmBan() {
       duration_days: banDialog.duration,
       reason: banDialog.reason || null,
     })
-    ElMessage.success(`已封禁用户「${(target as UserOut).nickname}」`)
+    ElMessage.success(`已封禁用户「${(target as UserOut).nickname}」，已通知本人`)
   } else {
     await banRipple(target.id, { reason: banDialog.reason || null })
-    ElMessage.success(`已封禁微澜「${(target as RippleOut).content.slice(0, 12)}…」（仅作者可见）`)
+    ElMessage.success(`已封禁微澜「${(target as RippleOut).content.slice(0, 12)}…」（仅作者可见），已通知作者`)
   }
   banDialog.visible = false
   loadBase()
+  loadUsers()
   loadRipples()
+  loadReviewLogs()
 }
 
 async function releaseUser(user: UserOut) {
   await unbanUser(user.id)
-  ElMessage.success(`已解封「${user.nickname}」`)
+  ElMessage.success(`已解封「${user.nickname}」，已同步通知本人`)
   loadBase()
+  loadUsers()
 }
 
 /* ---------------- 微澜审核 / 封禁 / 删除 ---------------- */
@@ -163,8 +213,10 @@ function openBanRipple(r: RippleOut) {
 
 async function passReview(r: RippleOut) {
   await approveRipple(r.id)
-  ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已通过审核，恢复公开`)
+  ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已通过审核，恢复公开，已通知作者`)
   loadBase()
+  loadRipples()
+  loadReviewLogs()
 }
 
 async function rejectReview(r: RippleOut) {
@@ -175,8 +227,10 @@ async function rejectReview(r: RippleOut) {
       inputType: 'textarea',
     })
     await rejectRipple(r.id, { reason: value || null })
-    ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已驳回（仅作者可见）`)
+    ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已驳回（仅作者可见），已通知作者`)
     loadBase()
+    loadRipples()
+    loadReviewLogs()
   } catch {
     /* 取消 */
   }
@@ -193,14 +247,17 @@ async function removeRipple(r: RippleOut) {
     return
   }
   await deleteRipple(r.id)
-  ElMessage.success('已删除')
+  ElMessage.success('已删除，已通知作者')
   loadBase()
   loadRipples()
+  loadReviewLogs()
 }
 
 onMounted(() => {
   loadBase()
+  loadUsers()
   loadRipples()
+  loadReviewLogs()
 })
 </script>
 
@@ -232,8 +289,20 @@ onMounted(() => {
             <div class="stat-num">{{ stats?.topics ?? '-' }}</div>
             <div class="stat-label">话题</div>
           </div>
+          <div class="stat-card">
+            <div class="stat-num">{{ stats?.pending ?? '-' }}</div>
+            <div class="stat-label">待审核</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">{{ stats?.banned_users ?? '-' }}</div>
+            <div class="stat-label">封禁用户</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">{{ stats?.banned_ripples ?? '-' }}</div>
+            <div class="stat-label">封禁微澜</div>
+          </div>
         </div>
-        <p class="tip">审核队列中待处理 {{ reviews.length }} 条</p>
+        <p class="tip">审核队列中待处理 {{ stats?.pending ?? reviews.length }} 条</p>
       </el-tab-pane>
 
       <!-- 审核队列 -->
@@ -260,10 +329,61 @@ onMounted(() => {
         </div>
       </el-tab-pane>
 
+      <!-- 审核记录 -->
+      <el-tab-pane label="审核记录" name="history">
+        <div class="card">
+          <el-table v-loading="loadingLogs" :data="reviewLogs" size="small">
+            <el-table-column label="内容" min-width="220">
+              <template #default="{ row }">{{ row.content }}</template>
+            </el-table-column>
+            <el-table-column label="作者" width="100">
+              <template #default="{ row }">{{ row.author_name }}</template>
+            </el-table-column>
+            <el-table-column label="处理" width="90">
+              <template #default="{ row }">
+                <el-tag :type="reviewAction(row.action).type" size="small">{{ reviewAction(row.action).text }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="原因" min-width="180">
+              <template #default="{ row }">
+                <span :class="{ muted: !row.reason }">{{ row.reason || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="审核人" width="110">
+              <template #default="{ row }">{{ row.reviewer_name }}</template>
+            </el-table-column>
+            <el-table-column label="处理时间" min-width="150">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!loadingLogs && reviewLogs.length === 0" class="empty-tip">还没有审核记录</div>
+        </div>
+      </el-tab-pane>
+
       <!-- 用户管理 -->
       <el-tab-pane label="用户管理" name="users">
+        <div class="filter-bar">
+          <el-input
+            v-model="userKeyword"
+            placeholder="按昵称 / 用户名搜索"
+            clearable
+            style="width: 240px"
+            @keyup.enter="searchUsers"
+            @clear="searchUsers"
+          >
+            <template #append>
+              <el-button @click="searchUsers">搜索</el-button>
+            </template>
+          </el-input>
+          <el-select v-model="userStatus" placeholder="全部状态" clearable style="width: 140px" @change="searchUsers">
+            <el-option label="全部状态" value="" />
+            <el-option label="正常" value="active" />
+            <el-option label="封禁中" value="banned" />
+          </el-select>
+        </div>
+
         <div class="card">
-          <el-table v-loading="loading" :data="users" size="small">
+          <el-table v-loading="loadingUsers" :data="users" size="small">
             <el-table-column prop="nickname" label="昵称" min-width="110" />
             <el-table-column prop="username" label="用户名" min-width="100" />
             <el-table-column label="角色" width="90">
@@ -273,13 +393,21 @@ onMounted(() => {
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="封禁状态" width="180">
+            <el-table-column label="封禁状态" width="190">
               <template #default="{ row }">
                 <el-tag v-if="row.ban_status === 'banned'" type="danger" size="small">
                   封禁中{{ row.ban_until ? ` · 至 ${formatTime(row.ban_until)}` : '（永久）' }}
                 </el-tag>
                 <el-tag v-else type="success" size="small">正常</el-tag>
               </template>
+            </el-table-column>
+            <el-table-column label="封禁原因" min-width="160">
+              <template #default="{ row }">
+                <span :class="{ muted: !row.ban_reason }">{{ row.ban_reason || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="注册时间" min-width="150">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
@@ -303,6 +431,7 @@ onMounted(() => {
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="!loadingUsers && users.length === 0" class="empty-tip">没有符合条件的用户</div>
         </div>
       </el-tab-pane>
 
@@ -321,6 +450,13 @@ onMounted(() => {
               <el-button @click="searchRipples">搜索</el-button>
             </template>
           </el-input>
+          <el-select v-model="rippleStatus" placeholder="全部状态" clearable style="width: 140px" @change="searchRipples">
+            <el-option label="全部状态" value="" />
+            <el-option label="已发布" value="published" />
+            <el-option label="审核中" value="pending" />
+            <el-option label="已封禁" value="banned" />
+            <el-option label="已删除" value="deleted" />
+          </el-select>
           <el-date-picker
             v-model="rippleRange"
             type="daterange"
@@ -345,8 +481,8 @@ onMounted(() => {
             </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
-                <el-tag :type="rippleStatus(row).type" size="small">
-                  {{ rippleStatus(row).text }}
+                <el-tag :type="rippleStatusMeta(row).type" size="small">
+                  {{ rippleStatusMeta(row).text }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -414,7 +550,7 @@ onMounted(() => {
 <style scoped>
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }

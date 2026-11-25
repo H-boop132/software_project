@@ -86,7 +86,11 @@ class AuthorRippleTests(MySQLIntegrationTestCase):
         self.assertEqual(self.client.delete(f"/api/v1/echoes/{echo['id']}", headers=reader).status_code, 404)
         self.assertEqual(self.client.post(f"{self.moderation}/approve", headers=admin).status_code, 404)
         self.assertEqual([item["id"] for item in self.client.get(self.mine, headers=author).json()], [2])
-        self.assertEqual(self.client.get("/api/v1/notifications", headers=author).json()["items"], [])
+        # 讨论类通知随内容下架/删除而隐藏，但"内容被下架"的处理通知要留给作者
+        items = self.client.get("/api/v1/notifications", headers=author).json()["items"]
+        self.assertEqual([item["kind"] for item in items], ["moderation"])
+        self.assertIn("下架", items[0]["note"])
+        self.assertIsNone(items[0]["echo_id"])
         with self.Session() as db:
             self.assertEqual(db.get(Ripple, 1).status, "deleted")
             self.assertEqual(db.query(RippleReview).filter_by(ripple_id=1).count(), 1)

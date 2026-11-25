@@ -7,6 +7,25 @@ export interface AdminStats {
   echoes: number
   likes: number
   topics: number
+  pending: number
+  banned_users: number
+  banned_ripples: number
+}
+
+export type AdminUserStatus = 'active' | 'banned'
+export type AdminRippleStatus = 'published' | 'banned' | 'pending' | 'deleted'
+
+export interface ReviewLog {
+  id: number
+  ripple_id: number
+  action: 'ban' | 'approve' | 'reject'
+  reason: string | null
+  reviewer_id: number
+  reviewer_name: string
+  author_id: number
+  author_name: string
+  content: string
+  created_at: string
 }
 
 export interface BanUserPayload {
@@ -22,18 +41,24 @@ export function getAdminStats() {
   return request.get<unknown, AdminStats>('/admin/stats')
 }
 
-export function listAdminUsers(params: { limit?: number; offset?: number } = {}) {
+/** 用户列表：可按昵称/用户名搜索、按封禁状态筛选 */
+export function listAdminUsers(params: { limit?: number; offset?: number; keyword?: string; status?: AdminUserStatus } = {}) {
   return request.get<unknown, UserOut[]>('/admin/users', { params })
 }
 
-/** 全部微澜（含封禁/待审核状态） */
-export function listAdminRipples(params: { limit?: number; offset?: number } = {}) {
+/** 全部微澜（含封禁/待审核状态），可按状态筛选 */
+export function listAdminRipples(params: { limit?: number; offset?: number; keyword?: string; status?: AdminRippleStatus } = {}) {
   return request.get<unknown, RippleOut[]>('/admin/ripples', { params })
 }
 
 /** 待审核队列 */
 export function listPendingReviews(params: { limit?: number; offset?: number } = {}) {
   return request.get<unknown, RippleOut[]>('/admin/reviews', { params })
+}
+
+/** 审核记录（谁在何时对哪条内容做了什么处理） */
+export function getReviewHistory(params: { limit?: number; offset?: number } = {}) {
+  return request.get<unknown, ReviewLog[]>('/admin/reviews/history', { params })
 }
 
 /** 封禁微澜（下架为仅作者可见） */

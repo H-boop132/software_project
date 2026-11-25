@@ -21,6 +21,18 @@ def _visible_messages(user_id: int):
     )
 
 
+def notify_author(
+    db: Session, recipient_id: int, actor_id: int, note: str, ripple_id: int | None = None,
+) -> None:
+    """把内容处理结果同步给作者（封禁/解封、下架/驳回/通过、删除）。自己操作自己不发。"""
+    if recipient_id == actor_id:
+        return
+    db.add(Notification(
+        recipient_id=recipient_id, actor_id=actor_id, kind="moderation",
+        ripple_id=ripple_id, note=note[:200],
+    ))
+
+
 def unread_count(db: Session, user_id: int) -> int:
     return db.scalar(select(func.count(Notification.id)).where(
         *_visible_messages(user_id), Notification.read_at.is_(None)
@@ -48,8 +60,12 @@ def list_messages(
     items = [
         NotificationOut(
             id=notice.id, kind=notice.kind, actor_id=notice.actor_id,
-            actor_name=nickname, ripple_id=ripple_id, echo_id=notice.echo_id,
-            preview=content[:100] if content else None, created_at=notice.created_at,
+            actor_name=nickname,
+            ripple_id=notice.ripple_id if notice.ripple_id is not None else ripple_id,
+            echo_id=notice.echo_id,
+            preview=content[:100] if content else None,
+            note=notice.note,
+            created_at=notice.created_at,
             read_at=notice.read_at,
         )
         for notice, nickname, ripple_id, content in rows[:limit]

@@ -10,3 +10,8 @@ export function uploadImage(file: File) {
   form.append('file', file)
   return request.post<unknown, UploadOut>('/upload', form)
 }
+
+/** 撤销上传：图片未被引用时才真正删除文件（移除图片/放弃草稿时调用） */
+export function cleanupUpload(url: string) {
+  return request.post<unknown, { deleted: boolean }>('/upload/cleanup', { url }, { silentError: true })
+}

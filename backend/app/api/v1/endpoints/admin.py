@@ -1,8 +1,10 @@
 """管理后台接口：仅 admin 角色可访问
 
-能力：平台统计 / 用户封禁与解封 / 微澜封禁 / 待审核队列 / 审核通过与驳回 / 内容删除
+能力：平台统计 / 用户搜索与筛选 / 用户封禁与解封 / 微澜封禁 / 待审核队列 /
+审核通过与驳回 / 审核记录 / 内容删除（处理结果同步通知作者）
 """
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -10,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.deps import get_current_admin
 from app.models.user import User
-from app.schemas.admin import BanUserRequest, ReviewActionRequest
+from app.schemas.admin import BanUserRequest, ReviewActionRequest, ReviewLogOut
 from app.schemas.ripple import RippleOut
 from app.schemas.user import UserOut
 from app.services import admin_service, moderation_service, ripple_service
@@ -27,12 +29,16 @@ def stats(db: Session = Depends(get_db), admin: User = Depends(get_current_admin
 # ---------------- 用户管理 ----------------
 @router.get("/users", response_model=list[UserOut], tags=["管理"])
 def users(
+    keyword: str | None = Query(None, max_length=50, description="昵称或用户名关键词"),
+    status_filter: Literal["active", "banned"] | None = Query(None, alias="status"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ):
-    return admin_service.list_users(db, limit=limit, offset=offset)
+    return admin_service.list_users(
+        db, limit=limit, offset=offset, keyword=keyword, status_filter=status_filter
+    )
 
 
 @router.post("/users/{user_id}/ban", response_model=UserOut, tags=["管理"])
@@ -61,6 +67,9 @@ def unban_user(
 @router.get("/ripples", response_model=list[RippleOut], tags=["管理"])
 def ripples(
     keyword: str | None = None,
+    status_filter: Literal["published", "banned", "pending", "deleted"] | None = Query(
+        None, alias="status"
+    ),
     start: datetime | None = None,
     end: datetime | None = None,
     limit: int = Query(20, ge=1, le=100),
@@ -68,12 +77,12 @@ def ripples(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ):
-    """全部微澜（含封禁/待审核状态）；支持关键词与发布时间范围筛选"""
+    """全部微澜（含封禁/待审核状态）；支持关键词、状态与发布时间范围筛选"""
     return ripple_service.list_ripples(
         db,
         limit=limit,
         offset=offset,
-        status=None,
+        status=status_filter,
         keyword=keyword,
         start=start,
         end=end,
@@ -105,6 +114,17 @@ def review_queue(
     )
 
 
+@router.get("/reviews/history", response_model=list[ReviewLogOut], tags=["管理"])
+def review_history(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """审核记录：谁在何时对哪条内容做了什么处理、原因是什么"""
+    return admin_service.list_reviews(db, limit=limit, offset=offset)
+
+
 @router.post("/ripples/{ripple_id}/approve", response_model=RippleOut, tags=["管理"])
 def approve_ripple(
     ripple_id: int,
@@ -134,5 +154,5 @@ def delete_ripple(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ):
-    admin_service.delete_ripple(db, ripple_id)
+    admin_service.delete_ripple(db, admin, ripple_id)
     return {"ok": True, "deleted_ripple_id": ripple_id}

@@ -14,6 +14,14 @@ export interface UserOut {
   created_at: string
 }
 
+export interface UserBrief {
+  id: number
+  nickname: string
+  avatar_url: string | null
+  bio: string | null
+  mood_tone: string | null
+}
+
 export interface EmotionOut {
   code: string
   name: string
@@ -53,7 +61,7 @@ export interface RippleOut {
   content: string
   emotion: EmotionOut | null
   topic: TopicOut | null
-  user: UserOut
+  user: UserBrief
   status: string
   images: string[]
   created_at: string
@@ -91,7 +99,7 @@ export interface EchoOut {
   id: number
   content: string
   emotion: EmotionOut | null
-  user: UserOut
+  user: UserBrief
   parent_echo_id: number | null
   created_at: string
   children: EchoOut[]

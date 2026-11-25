@@ -25,3 +25,8 @@ Thumbs.db
 # ---------- 日志 ----------
 *.log
 logs/
+
+# ---------- 运行时上传文件 ----------
+# 保留仓库内的种子示例图，其余用户上传不提交
+backend/uploads/*
+!backend/uploads/ripple-*.jpeg

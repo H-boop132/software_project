@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Ripple, RippleReview, User, UserBan
+from app.services.notification_service import notify_author
 from app.services.ripple_service import lock_ripple
 
 
@@ -71,6 +72,7 @@ def ban_user(
             ban_until=until,
         )
     )
+    notify_author(db, user.id, admin.id, ban_message(user))
     db.commit()
     db.refresh(user)
     return user
@@ -83,6 +85,7 @@ def unban_user(db: Session, admin: User, user_id: int) -> User:
     user.ban_status = "active"
     user.ban_until = None
     user.ban_reason = None
+    notify_author(db, user.id, admin.id, "账号封禁已解除，可以正常使用了。")
     db.commit()
     db.refresh(user)
     return user
@@ -98,6 +101,10 @@ def ban_ripple(db: Session, admin: User, ripple_id: int, reason: str | None) -> 
     db.add(
         RippleReview(ripple_id=ripple.id, reviewer_id=admin.id, action="ban", reason=reason)
     )
+    notify_author(
+        db, ripple.user_id, admin.id,
+        f"你的微澜已被下架（仅你自己可见）。原因：{reason or '未说明'}", ripple.id,
+    )
     db.commit()
     db.refresh(ripple)
     return ripple
@@ -110,6 +117,7 @@ def approve_ripple(db: Session, admin: User, ripple_id: int) -> Ripple:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅待审核的内容可审核通过")
     ripple.status = "published"
     db.add(RippleReview(ripple_id=ripple.id, reviewer_id=admin.id, action="approve"))
+    notify_author(db, ripple.user_id, admin.id, "你的微澜已通过审核，重新公开可见。", ripple.id)
     db.commit()
     db.refresh(ripple)
     return ripple
@@ -125,6 +133,11 @@ def reject_ripple(db: Session, admin: User, ripple_id: int, reason: str | None) 
         RippleReview(
             ripple_id=ripple.id, reviewer_id=admin.id, action="reject", reason=reason
         )
+    )
+    notify_author(
+        db, ripple.user_id, admin.id,
+        f"你的微澜未通过审核（已驳回），仅你自己可见，可修改后重新提交。原因：{reason or '未说明'}",
+        ripple.id,
     )
     db.commit()
     db.refresh(ripple)

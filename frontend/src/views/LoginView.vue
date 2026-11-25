@@ -17,21 +17,40 @@ const form = reactive({
 const submitting = ref(false)
 
 async function submit() {
-  if (!form.username || !form.password) {
+  const username = form.username.trim()
+  const nickname = form.nickname.trim()
+  if (!username || !form.password) {
     ElMessage.warning('请填写用户名和密码')
     return
   }
-  if (mode.value === 'register' && form.password.length < 6) {
+  if (username.length < 3) {
+    ElMessage.warning('用户名至少 3 个字符')
+    return
+  }
+  if (username.length > 50) {
+    ElMessage.warning('用户名最多 50 个字符')
+    return
+  }
+  if (!/^[A-Za-z0-9]+$/.test(username)) {
+    ElMessage.warning('用户名只能包含字母和数字')
+    return
+  }
+  if (form.password.length < 6) {
     ElMessage.warning('密码至少 6 位')
     return
   }
+  if (mode.value === 'register' && nickname.length > 50) {
+    ElMessage.warning('昵称最多 50 个字符')
+    return
+  }
+  form.username = username
   submitting.value = true
   try {
     if (mode.value === 'login') {
-      await userStore.login(form.username, form.password)
+      await userStore.login(username, form.password)
       ElMessage.success('欢迎回来 🌊')
     } else {
-      await userStore.register(form.username, form.nickname || form.username, form.password)
+      await userStore.register(username, nickname || username, form.password)
       ElMessage.success('注册成功，欢迎来到微澜 🌊')
     }
     // 登录成功后跳回原目标页（无则回首页）
@@ -61,7 +80,7 @@ async function submit() {
         <el-form-item label="用户名">
           <el-input
             v-model="form.username"
-            placeholder="demo（种子账号，密码 demo123456）"
+            :placeholder="mode === 'register' ? '3-50 位字母或数字' : 'demo（种子账号，密码 demo123456）'"
             @keyup.enter="submit"
           />
         </el-form-item>

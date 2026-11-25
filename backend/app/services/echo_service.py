@@ -33,7 +33,7 @@ def create_echo(db: Session, user: User, ripple_id: int, data: EchoCreate) -> Ec
         visited.add(parent.id)
         depth += 1
         if depth > MAX_ECHO_DEPTH:
-            raise HTTPException(status_code=400, detail="回复最多支持 8 层，请直接回应微澜或较上层回声")
+            raise HTTPException(status_code=400, detail=f"回复最多支持 {MAX_ECHO_DEPTH} 层，请直接回应微澜或较上层回声")
         parent_id = parent.parent_echo_id
 
     echo = Echo(

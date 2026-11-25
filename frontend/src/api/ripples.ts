@@ -1,5 +1,5 @@
 import request from './request'
-import type { EchoDeleteOut, EchoOut, EchoPayload, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
+import type { EchoDeleteOut, EchoOut, EchoPayload, EmotionOut, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
 
 export interface RipplePayload {
   content: string
@@ -66,4 +66,9 @@ export function getHotTides() {
 
 export function getMoodSummary() {
   return request.get<unknown, MoodOut[]>('/moods/summary')
+}
+
+/** 全部可选情绪色调（资料编辑下拉用） */
+export function getMoodTones() {
+  return request.get<unknown, EmotionOut[]>('/moods/tones')
 }

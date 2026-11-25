@@ -16,6 +16,12 @@ class TopicDetailOut(TopicOut):
     is_subscribed: bool
 
 
+@router.get("", response_model=list[TopicOut])
+def list_topics(db: Session = Depends(get_db)):
+    """全部话题（字典数据，供发布页下拉、筛选等使用；按 id 升序）"""
+    return list(db.scalars(select(Topic).order_by(Topic.id)).all())
+
+
 @router.get("/subscribed", response_model=list[TopicOut])
 def subscribed_topics(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.scalars(

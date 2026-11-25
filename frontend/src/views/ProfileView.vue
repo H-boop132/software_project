@@ -4,9 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
-import { deleteMyRipple, fetchMyRipples, updateRipple } from '@/api/ripples'
-import type { LikeOut, MyRippleOut, MyRippleStatus, RippleOut, UserProfile } from '@/api/types'
-import { fetchUserProfile } from '@/api/users'
+import { deleteMyRipple, fetchMyRipples, getMoodTones, updateRipple } from '@/api/ripples'
+import type { EmotionOut, LikeOut, MyRippleOut, MyRippleStatus, RippleOut, UserProfile } from '@/api/types'
+import { changeMyPassword, deleteMyAccount, fetchUserProfile, updateMyProfile } from '@/api/users'
+import { cleanupUpload, uploadImage } from '@/api/upload'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
 
@@ -173,10 +174,154 @@ async function removeRipple(ripple: MyRippleOut) {
 watch([filter, submittedKeyword, page], loadMyRipples)
 onBeforeUnmount(() => { listVersion++ })
 
+/* ---------- 资料编辑 ---------- */
+const moodTones = ref<EmotionOut[]>([])
+const profileDialog = reactive({
+  visible: false,
+  nickname: '',
+  bio: '',
+  mood_tone: '',
+  avatar_url: '',
+})
+const savingProfile = ref(false)
+const uploadingAvatar = ref(false)
+
+function openProfileEdit() {
+  if (!user.value) return
+  profileDialog.nickname = user.value.nickname
+  profileDialog.bio = user.value.bio || ''
+  profileDialog.mood_tone = user.value.mood_tone || ''
+  profileDialog.avatar_url = user.value.avatar_url || ''
+  profileDialog.visible = true
+}
+
+async function handleAvatarUpload(options: {
+  file: File
+  onSuccess?: (response?: unknown) => void
+  onError?: (error: unknown) => void
+}) {
+  uploadingAvatar.value = true
+  try {
+    const previous = profileDialog.avatar_url
+    const { url } = await uploadImage(options.file)
+    profileDialog.avatar_url = url
+    // 替换了尚未保存的头像：把前一张"传了但没用到"的文件清理掉
+    if (previous && previous !== user.value?.avatar_url) void cleanupUpload(previous)
+    options.onSuccess?.()
+  } catch (error) {
+    options.onError?.(error) /* 全局提示 */
+  } finally { uploadingAvatar.value = false }
+}
+
+async function submitProfile() {
+  if (!user.value || savingProfile.value) return
+  const nickname = profileDialog.nickname.trim()
+  if (!nickname) {
+    ElMessage.warning('昵称不能为空')
+    return
+  }
+  savingProfile.value = true
+  try {
+    await updateMyProfile({
+      nickname,
+      bio: profileDialog.bio.trim() || null,
+      mood_tone: profileDialog.mood_tone || null,
+      avatar_url: profileDialog.avatar_url || null,
+    })
+    await userStore.refreshMe()
+    if (user.value) {
+      try { social.value = await fetchUserProfile(user.value.id) } catch { /* 忽略统计刷新失败 */ }
+    }
+    profileDialog.visible = false
+    ElMessage.success('资料已更新')
+  } catch { /* 全局提示 */ }
+  finally { savingProfile.value = false }
+}
+
+/** 关闭编辑资料弹窗时，清掉本次上传但未保存的头像文件 */
+function handleProfileDialogClosed() {
+  const draftAvatar = profileDialog.avatar_url
+  if (draftAvatar && draftAvatar !== user.value?.avatar_url) void cleanupUpload(draftAvatar)
+}
+
+/* ---------- 账号设置：修改密码 / 注销账号 ---------- */
+const passwordDialog = reactive({ visible: false, oldPassword: '', newPassword: '', confirm: '' })
+const changingPassword = ref(false)
+
+function openPasswordDialog() {
+  passwordDialog.oldPassword = ''
+  passwordDialog.newPassword = ''
+  passwordDialog.confirm = ''
+  passwordDialog.visible = true
+}
+
+async function submitPassword() {
+  if (changingPassword.value) return
+  if (!passwordDialog.oldPassword) {
+    ElMessage.warning('请输入原密码')
+    return
+  }
+  if (passwordDialog.newPassword.length < 6) {
+    ElMessage.warning('新密码至少 6 位')
+    return
+  }
+  if (passwordDialog.newPassword !== passwordDialog.confirm) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  changingPassword.value = true
+  try {
+    await changeMyPassword({
+      old_password: passwordDialog.oldPassword,
+      new_password: passwordDialog.newPassword,
+    })
+    passwordDialog.visible = false
+    userStore.logout()
+    ElMessage.success('密码已修改，请用新密码重新登录')
+    await router.push('/login')
+  } catch { /* 全局提示 */ }
+  finally { changingPassword.value = false }
+}
+
+const deleteDialog = reactive({ visible: false, password: '' })
+const deletingAccount = ref(false)
+
+function openDeleteDialog() {
+  deleteDialog.password = ''
+  deleteDialog.visible = true
+}
+
+async function submitDeleteAccount() {
+  if (deletingAccount.value) return
+  if (!deleteDialog.password) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '注销后你的微澜、回声、关注关系都会被删除，且无法恢复。确定继续？',
+      '注销账号',
+      { type: 'warning', confirmButtonText: '确认注销', cancelButtonText: '再想想' },
+    )
+  } catch {
+    return
+  }
+  deletingAccount.value = true
+  try {
+    await deleteMyAccount({ password: deleteDialog.password })
+    deleteDialog.visible = false
+    userStore.logout()
+    ElMessage.success('账号已注销')
+    router.push('/login')
+  } catch { /* 全局提示 */ }
+  finally { deletingAccount.value = false }
+}
+
 onMounted(async () => {
   await userStore.refreshMe()
   if (!user.value) return
   void loadMyRipples()
+  getMoodTones().then((items) => { moodTones.value = items }).catch(() => { /* 下拉缺省为空 */ })
   try { social.value = await fetchUserProfile(user.value.id) }
   catch { /* 全局提示 */ }
 })
@@ -188,9 +333,15 @@ onMounted(async () => {
     <div class="card profile-card">
       <template v-if="isLoggedIn && user">
         <div class="me">
-          <div class="me-avatar">{{ user.nickname.slice(0, 1) }}</div>
+          <div class="me-avatar">
+            <img v-if="user.avatar_url" :src="user.avatar_url" class="me-avatar-img" alt="头像" />
+            <template v-else>{{ user.nickname.slice(0, 1) }}</template>
+          </div>
           <div class="me-info">
-            <div class="me-nickname">{{ user.nickname }}</div>
+            <div class="me-nickname-row">
+              <div class="me-nickname">{{ user.nickname }}</div>
+              <el-button size="small" text type="primary" @click="openProfileEdit">编辑资料</el-button>
+            </div>
             <div class="me-meta">
               @{{ user.username }} · {{ user.role === 'admin' ? '管理员' : '普通用户' }}
             </div>
@@ -203,6 +354,26 @@ onMounted(async () => {
         </div>
       </template>
       <div v-else class="empty-tip">请先登录再访问个人主页</div>
+    </div>
+
+    <!-- 账号设置 -->
+    <div v-if="isLoggedIn && user" class="card account-card">
+      <h3>账号设置</h3>
+      <div class="account-row">
+        <div class="account-copy">
+          <strong>修改密码</strong>
+          <span>修改后当前登录状态不受影响，下次登录使用新密码。</span>
+        </div>
+        <el-button @click="openPasswordDialog">修改密码</el-button>
+      </div>
+      <div class="account-row">
+        <div class="account-copy">
+          <strong>注销账号</strong>
+          <span v-if="user.role === 'admin'">管理员账号不支持自助注销，需先移交管理权限。</span>
+          <span v-else>账号及其微澜、回声、关注关系会被永久删除，不可恢复。</span>
+        </div>
+        <el-button v-if="user.role !== 'admin'" type="danger" plain @click="openDeleteDialog">注销账号</el-button>
+      </div>
     </div>
 
     <!-- 个人内容与收藏 -->
@@ -302,12 +473,140 @@ onMounted(async () => {
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 资料编辑弹窗 -->
+    <el-dialog v-model="profileDialog.visible" title="编辑资料"
+      width="min(520px, calc(100% - 32px))" :close-on-click-modal="!savingProfile"
+      :close-on-press-escape="!savingProfile" :show-close="!savingProfile"
+      @closed="handleProfileDialogClosed">
+      <el-form label-width="76px" label-position="left" class="profile-form">
+        <el-form-item label="头像">
+          <div class="avatar-edit">
+            <img v-if="profileDialog.avatar_url" :src="profileDialog.avatar_url" class="avatar-preview" alt="头像预览" />
+            <div v-else class="avatar-preview avatar-placeholder">
+              {{ profileDialog.nickname.trim().slice(0, 1) || '?' }}
+            </div>
+            <div class="avatar-actions">
+              <el-upload
+                :show-file-list="false"
+                :http-request="handleAvatarUpload"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+              >
+                <el-button size="small" :loading="uploadingAvatar" :disabled="savingProfile">上传头像</el-button>
+              </el-upload>
+              <el-button v-if="profileDialog.avatar_url" size="small" text
+                :disabled="savingProfile" @click="profileDialog.avatar_url = ''">移除</el-button>
+              <div class="avatar-hint">jpg/png/webp/gif，≤5MB</div>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="昵称" required>
+          <el-input v-model="profileDialog.nickname" maxlength="50" show-word-limit
+            placeholder="大家怎么称呼你" :disabled="savingProfile" />
+        </el-form-item>
+        <el-form-item label="签名">
+          <el-input v-model="profileDialog.bio" type="textarea" :rows="3" maxlength="200"
+            show-word-limit placeholder="一句话介绍自己" :disabled="savingProfile" />
+        </el-form-item>
+        <el-form-item label="情绪色调">
+          <el-select v-model="profileDialog.mood_tone" clearable placeholder="不设置"
+            :disabled="savingProfile" style="width: 100%">
+            <el-option v-for="tone in moodTones" :key="tone.code"
+              :label="`${tone.name}（${tone.code}）`" :value="tone.code" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="savingProfile" @click="profileDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="savingProfile" @click="submitProfile">保存</el-button>
+      </template>
+    </el-dialog>
+    <!-- 修改密码弹窗 -->
+    <el-dialog v-model="passwordDialog.visible" title="修改密码"
+      width="min(440px, calc(100% - 32px))" :close-on-click-modal="!changingPassword"
+      :close-on-press-escape="!changingPassword" :show-close="!changingPassword">
+      <el-form label-width="88px" label-position="left">
+        <el-form-item label="原密码" required>
+          <el-input v-model="passwordDialog.oldPassword" type="password" show-password
+            autocomplete="current-password" :disabled="changingPassword" />
+        </el-form-item>
+        <el-form-item label="新密码" required>
+          <el-input v-model="passwordDialog.newPassword" type="password" show-password
+            maxlength="64" autocomplete="new-password" placeholder="至少 6 位" :disabled="changingPassword" />
+        </el-form-item>
+        <el-form-item label="确认新密码" required>
+          <el-input v-model="passwordDialog.confirm" type="password" show-password
+            maxlength="64" autocomplete="new-password" :disabled="changingPassword" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="changingPassword" @click="passwordDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="changingPassword" @click="submitPassword">保存新密码</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 注销账号弹窗 -->
+    <el-dialog v-model="deleteDialog.visible" title="注销账号"
+      width="min(440px, calc(100% - 32px))" :close-on-click-modal="!deletingAccount"
+      :close-on-press-escape="!deletingAccount" :show-close="!deletingAccount">
+      <el-alert type="warning" :closable="false" show-icon
+        title="注销不可恢复，账号下的微澜与回声会被一并删除。" />
+      <el-form label-width="88px" label-position="left" style="margin-top: 16px">
+        <el-form-item label="当前密码" required>
+          <el-input v-model="deleteDialog.password" type="password" show-password
+            autocomplete="current-password" :disabled="deletingAccount" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="deletingAccount" @click="deleteDialog.visible = false">取消</el-button>
+        <el-button type="danger" :loading="deletingAccount" @click="submitDeleteAccount">确认注销</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <style scoped>
 .profile-card {
   max-width: 640px;
+}
+
+.account-card {
+  max-width: 640px;
+}
+
+.account-card h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--wl-border);
+  flex-wrap: wrap;
+}
+
+.account-row + .account-row {
+  border-top: 1px solid var(--wl-border);
+}
+
+.account-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.account-copy strong {
+  font-size: 14px;
+}
+
+.account-copy span {
+  color: var(--wl-muted);
+  font-size: 12.5px;
 }
 
 .me {
@@ -327,6 +626,58 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.me-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.me-nickname-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-edit {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1f7a8c, #4fb3c4);
+  color: #fff;
+  font-size: 24px;
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.avatar-hint {
+  font-size: 12px;
+  color: #90a4ae;
+}
+
+.profile-form {
+  margin-top: 4px;
 }
 
 .me-nickname {

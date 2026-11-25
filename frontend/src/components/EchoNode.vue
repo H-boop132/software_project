@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { EchoOut } from '@/api/types'
+import { MAX_ECHO_DEPTH } from '@/constants/limits'
 import { useUserStore } from '@/stores/user'
 
-const props = withDefaults(defineProps<{ echo: EchoOut; depth?: number; interactive: boolean }>(), { depth: 0 })
+// depth 从 1 起算：第一条回声为第 1 层，与后端校验口径一致
+const props = withDefaults(defineProps<{ echo: EchoOut; depth?: number; interactive: boolean }>(), { depth: 1 })
 const emit = defineEmits<{ reply: [echo: EchoOut]; remove: [echo: EchoOut] }>()
 const store = useUserStore()
 const collapsed = ref(false)
@@ -20,7 +22,7 @@ const canDelete = computed(() => props.echo.user.id === store.user?.id || store.
       </div>
       <p>{{ echo.content }}</p>
       <div class="echo-actions">
-        <el-button link type="primary" :disabled="!interactive || depth >= 7" :aria-label="`回复 ${echo.user.nickname}`" @click="emit('reply', echo)">回复</el-button>
+        <el-button link type="primary" :disabled="!interactive || depth >= MAX_ECHO_DEPTH" :aria-label="`回复 ${echo.user.nickname}`" @click="emit('reply', echo)">回复</el-button>
         <el-button v-if="canDelete" link type="danger" :disabled="!interactive" :aria-label="`删除回声 ${echo.id}`" @click="emit('remove', echo)">删除</el-button>
         <el-button v-if="echo.children.length" link @click="collapsed = !collapsed" :aria-expanded="!collapsed">{{ collapsed ? '展开回复' : '收起回复' }}（{{ echo.children.length }}）</el-button>
       </div>

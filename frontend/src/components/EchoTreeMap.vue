@@ -20,6 +20,7 @@ type TreeNode = {
   y: number
   echo: EchoOut | null
   author: string
+  avatar: string | null
   preview: string
   hasChildren: boolean
   selectedPath: boolean
@@ -44,6 +45,7 @@ const graph = computed(() => {
       y,
       echo,
       author: echo ? echo.user.nickname : props.ripple.user.nickname,
+      avatar: echo ? echo.user.avatar_url : props.ripple.user.avatar_url,
       preview: echo ? echo.content : props.ripple.content,
       hasChildren: children.length > 0,
       selectedPath: (echo !== null && echo.id === props.selectedId) || next.some(child => child.selectedPath),
@@ -118,7 +120,10 @@ watch(() => props.ripple.id, reset)
             <button type="button" class="map-node" :class="{ 'map-root': !node.echo, 'map-selected': node.echo && node.echo.id === selectedId }"
               :aria-label="(node.echo ? '回声' : '原始微澜') + '，' + node.author + '，' + node.preview"
               :aria-pressed="(node.echo?.id ?? null) === selectedId" @click="emit('select', node.echo)">
-              <span class="node-avatar" aria-hidden="true">{{ Array.from(node.author)[0] }}</span>
+              <span class="node-avatar" aria-hidden="true">
+                <img v-if="node.avatar" :src="node.avatar" alt="" class="node-avatar-img" />
+                <template v-else>{{ Array.from(node.author)[0] }}</template>
+              </span>
               <span class="node-copy">
                 <strong>{{ node.author }}</strong>
                 <span>{{ node.preview }}</span>
@@ -168,7 +173,8 @@ watch(() => props.ripple.id, reset)
 .map-root { background: #215c50; border-color: #215c50; color: #f5fcf7; }
 .map-node:hover { border-color: #5d8f7c; }
 .map-selected { box-shadow: 0 0 0 2px #317c68; border-color: #317c68; background: #f4fbf5; }
-.node-avatar { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 9px; color: #245b4d; background: #e6f0e8; font-size: 14px; font-weight: 650; }
+.node-avatar { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 9px; color: #245b4d; background: #e6f0e8; font-size: 14px; font-weight: 650; overflow: hidden; }
+.node-avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .map-root .node-avatar { background: #ffffff25; color: #f5fcf7; }
 .node-copy { min-width: 0; display: grid; gap: 3px; }
 .node-copy :is(strong, span) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

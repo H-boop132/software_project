@@ -3,11 +3,15 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.storage import delete_upload_if_unused
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.upload import UploadOut
+from app.schemas.media import is_upload_url
+from app.schemas.upload import UploadCleanupIn, UploadCleanupOut, UploadOut
 
 router = APIRouter()
 
@@ -36,3 +40,18 @@ async def upload_image(
     name = f"{uuid.uuid4().hex}{ext}"
     (upload_dir / name).write_bytes(content)
     return UploadOut(url=f"{settings.upload_url_prefix}/{name}")
+
+
+@router.post("/cleanup", response_model=UploadCleanupOut, tags=["上传"])
+def cleanup_upload(
+    data: UploadCleanupIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """撤销上传：仅当该图片未被任何头像/微澜引用时删除磁盘文件。
+
+    用于发布页移除图片、放弃草稿等"传了但没用到"的场景，避免文件只增不减。
+    """
+    if not is_upload_url(data.url):
+        raise HTTPException(status_code=400, detail="只能清理本站上传的图片")
+    return UploadCleanupOut(deleted=delete_upload_if_unused(db, data.url))

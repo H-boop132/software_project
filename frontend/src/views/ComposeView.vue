@@ -3,8 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { createRipple, getHotTides } from '@/api/ripples'
-import { uploadImage } from '@/api/upload'
+import { createRipple } from '@/api/ripples'
+import { listTopics } from '@/api/topics'
+import { uploadImage, cleanupUpload } from '@/api/upload'
 import type { TopicOut } from '@/api/types'
 
 const router = useRouter()
@@ -111,7 +112,9 @@ async function discardDraft() {
   } catch {
     return
   }
+  const urls = [...images.value]
   if (draftKey.value === key) resetForm()
+  urls.forEach((url) => void cleanupUpload(url))
 }
 
 async function handleUpload(file: File) {
@@ -135,7 +138,9 @@ function openPreview(url: string) {
 }
 
 function removeImage(index: number) {
+  const removed = images.value[index]
   images.value = images.value.filter((_, imageIndex) => imageIndex !== index)
+  if (removed) void cleanupUpload(removed)
 }
 
 async function submit() {
@@ -168,8 +173,7 @@ onMounted(async () => {
   const currentTopic = topicId.value
   const requestedTopic = typeof route.query.topic === 'string' ? Number(route.query.topic) : undefined
   try {
-    const tides = await getHotTides()
-    topics.value = tides.map((t) => t.topic)
+    topics.value = await listTopics()
     const match = topics.value.find((topic) => topic.id === requestedTopic)
     if (match && accountDraft === draftKey.value && topicId.value === currentTopic) topicId.value = match.id
   } catch {

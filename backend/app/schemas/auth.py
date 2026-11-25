@@ -16,6 +16,11 @@ class RegisterRequest(BaseModel):
             raise ValueError("用户名只能包含字母和数字")
         return v
 
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def strip_nickname(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class LoginRequest(BaseModel):
     username: str

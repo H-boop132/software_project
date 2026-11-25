@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session, lazyload
 
+from app.core.storage import delete_upload_if_unused
 from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, RippleReview, Topic, TopicSubscription, User
 from app.schemas.ripple import (
     AuthorReviewOut,
@@ -21,6 +22,12 @@ from app.schemas.ripple import (
 
 # 潮汐热度权重：微澜 +10 / 回声 +5 / 点赞 +2，叠加话题基础热度
 _W_RIPPLE, _W_ECHO, _W_LIKE = 10, 5, 2
+
+
+def _like_pattern(keyword: str) -> str:
+    """转义 LIKE 通配符，避免用户输入的 % 和 _ 变成"匹配全部"。"""
+    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _count_subqueries():
@@ -139,7 +146,7 @@ def list_ripples(
     if has_images:
         stmt = stmt.where(func.json_type(Ripple.images) == "ARRAY", func.json_length(Ripple.images) > 0)
     if keyword:
-        stmt = stmt.where(Ripple.content.like(f"%{keyword}%"))
+        stmt = stmt.where(Ripple.content.like(_like_pattern(keyword), escape="\\"))
     if start is not None:
         stmt = stmt.where(Ripple.created_at >= start)
     if end is not None:
@@ -219,6 +226,11 @@ def create_ripple(db: Session, user: User, data: RippleCreate) -> RippleOut:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="管理员账号不提供发布微澜功能",
         )
+    # 外键存在性前置校验，避免直接落库触发 IntegrityError 变成 500
+    if data.topic_id is not None and db.get(Topic, data.topic_id) is None:
+        raise HTTPException(status_code=400, detail="话题不存在")
+    if data.emotion_code is not None and db.get(Emotion, data.emotion_code) is None:
+        raise HTTPException(status_code=400, detail="情绪标签不存在")
     ripple = Ripple(
         user_id=user.id,
         content=data.content,
@@ -299,6 +311,7 @@ def update_ripple(
             detail="审核中的微澜暂不可编辑",
         )
     values = data.model_dump(exclude_unset=True, exclude={"expected_status"})
+    old_images = list(ripple.images or [])
     if values.get("topic_id") is not None and db.get(Topic, values["topic_id"]) is None:
         raise HTTPException(status_code=400, detail="话题不存在")
     if values.get("emotion_code") is not None and db.get(Emotion, values["emotion_code"]) is None:
@@ -310,6 +323,8 @@ def update_ripple(
         ripple.created_at = datetime.now()
     db.commit()
     db.refresh(ripple)
+    for url in set(old_images) - set(ripple.images or []):
+        delete_upload_if_unused(db, url)
     return ripples_to_out(db, [ripple], current_user=user)[0]
 
 
@@ -320,8 +335,12 @@ def delete_own_ripple(db: Session, user: User, ripple_id: int) -> None:
         if ripple.status == "deleted":
             raise HTTPException(status_code=404, detail="微澜不存在")
         raise HTTPException(status_code=403, detail="只能删除自己的微澜")
+    images = list(ripple.images or [])
     ripple.status = "deleted"
+    ripple.images = None
     db.commit()
+    for url in images:
+        delete_upload_if_unused(db, url)
 
 
 def _build_echo_tree(echoes: list[Echo]) -> list[EchoOut]:

@@ -1,6 +1,6 @@
 import request from './request'
 
-export type NotificationKind = 'echo' | 'reply' | 'follow'
+export type NotificationKind = 'echo' | 'reply' | 'follow' | 'moderation'
 
 export interface NotificationItem {
   id: number
@@ -10,6 +10,8 @@ export interface NotificationItem {
   ripple_id: number | null
   echo_id: number | null
   preview: string | null
+  /** 内容处理说明（封禁/驳回原因等），仅 moderation 消息有 */
+  note: string | null
   created_at: string
   read_at: string | null
 }
