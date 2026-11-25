@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password
 from app.core.storage import delete_upload_if_unused
 from app.models import Emotion, Ripple, User
-from app.schemas.user import AccountDeleteRequest, PasswordChange, UserUpdate
+from app.schemas.user import (
+    AccountDeleteRequest, PasswordChange, UserPrivacyUpdate, UserUpdate,
+)
 
 
 def update_me(db: Session, user: User, data: UserUpdate) -> User:
@@ -22,6 +24,16 @@ def update_me(db: Session, user: User, data: UserUpdate) -> User:
     db.refresh(user)
     if old_avatar and old_avatar != user.avatar_url:
         delete_upload_if_unused(db, old_avatar)
+    return user
+
+
+def update_privacy(db: Session, user: User, data: UserPrivacyUpdate) -> User:
+    """只更新显式提交的可见范围开关；仅自己可见，不影响资料字段。"""
+    for field, value in data.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
     return user
 
 

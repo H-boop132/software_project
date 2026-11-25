@@ -13,6 +13,10 @@ class UserOut(BaseModel):
     avatar_url: str | None = None
     bio: str | None = None
     mood_tone: str | None = None
+    hide_following: bool = False
+    hide_followers: bool = False
+    hide_likes: bool = False
+    hide_collections: bool = False
     role: str = "user"
     ban_status: str = "active"
     ban_until: datetime | None = None
@@ -46,6 +50,10 @@ class UserProfile(BaseModel):
     following_count: int = 0
     is_following: bool = False
     follows_you: bool = False
+    hide_following: bool = False
+    hide_followers: bool = False
+    hide_likes: bool = False
+    hide_collections: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +100,14 @@ class UserUpdate(BaseModel):
                 raise ValueError("头像必须来自本站上传")
             return value
         return value
+
+
+class UserPrivacyUpdate(BaseModel):
+    """主页列表可见范围：只更新显式传入的开关，未传保持原值。"""
+    hide_following: bool | None = None
+    hide_followers: bool | None = None
+    hide_likes: bool | None = None
+    hide_collections: bool | None = None
 
 
 class PasswordChange(BaseModel):

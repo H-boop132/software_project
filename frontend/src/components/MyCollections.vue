@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchMyCollections } from '@/api/interactions'
+import { fetchUserCollections } from '@/api/users'
 import type { CollectionOut, LikeOut, RippleOut } from '@/api/types'
 import RippleCard from '@/components/RippleCard.vue'
 
+const props = withDefaults(defineProps<{ userId?: number; own?: boolean }>(), { own: true })
 const emit = defineEmits<{ 'like-updated': [state: LikeOut] }>()
 const items = ref<RippleOut[]>([])
 const total = ref(0)
@@ -18,7 +20,9 @@ async function loadCollections(targetPage = page.value) {
   loading.value = true
   failed.value = false
   try {
-    const result = await fetchMyCollections({ limit: pageSize, offset: (targetPage - 1) * pageSize })
+    const result = props.userId
+      ? await fetchUserCollections(props.userId, { limit: pageSize, offset: (targetPage - 1) * pageSize })
+      : await fetchMyCollections({ limit: pageSize, offset: (targetPage - 1) * pageSize })
     if (version !== requestVersion) return
     const lastPage = Math.max(1, Math.ceil(result.total / pageSize))
     // 最后一页最后一项被取消，或其他页面改变收藏时，自动回到有效页。
@@ -46,7 +50,8 @@ function updateLike(state: LikeOut) {
 }
 
 function updateCollection(state: CollectionOut) {
-  if (!state.is_collected) void loadCollections()
+  // 看别人的收藏时，自己取消收藏不会改变对方的收藏列表。
+  if (props.own && !state.is_collected) void loadCollections()
 }
 
 onMounted(() => { void loadCollections() })
@@ -54,7 +59,7 @@ onBeforeUnmount(() => { requestVersion++ })
 </script>
 
 <template>
-  <section aria-label="我的收藏">
+  <section :aria-label="props.own ? '我的收藏' : 'TA 的收藏'">
     <div class="collections-toolbar">
       <span v-if="!failed" aria-live="polite">共 {{ total }} 条收藏</span>
       <span v-else>收藏加载失败，请重试</span>
@@ -73,8 +78,8 @@ onBeforeUnmount(() => { requestVersion++ })
           @collection-updated="updateCollection"
         />
         <div v-if="!loading && total === 0" class="empty-tip">
-          <p>还没有收藏，去时间线收藏喜欢的微澜吧。</p>
-          <router-link to="/">浏览时间线</router-link>
+          <p>{{ props.own ? '还没有收藏，去时间线收藏喜欢的微澜吧。' : 'TA 还没有收藏的微澜。' }}</p>
+          <router-link v-if="props.own" to="/">浏览时间线</router-link>
         </div>
       </template>
     </div>

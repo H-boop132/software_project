@@ -6,10 +6,12 @@ from app.core.database import get_db
 from app.deps import get_current_user, get_optional_user
 from app.models.user import User
 from app.schemas.user import (
-    AccountDeleteRequest, PasswordChange, UserOut, UserPage, UserProfile, UserUpdate,
+    AccountDeleteRequest, PasswordChange, UserOut, UserPage, UserPrivacyUpdate,
+    UserProfile, UserUpdate,
 )
+from app.schemas.interaction import CollectionPage, LikePage
 from app.schemas.ripple import RippleOut
-from app.services import follow_service, ripple_service, user_service
+from app.services import follow_service, interaction_service, ripple_service, user_service
 
 router = APIRouter()
 
@@ -38,6 +40,16 @@ def change_password(
     """修改登录密码：校验原密码，新密码 ≥6 位。"""
     user_service.change_password(db, user, data)
     return {"ok": True}
+
+
+@router.put("/me/privacy", response_model=UserOut)
+def update_privacy(
+    data: UserPrivacyUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """设置主页关注/粉丝/喜欢/收藏列表是否对访客隐藏。"""
+    return user_service.update_privacy(db, user, data)
 
 
 @router.post("/me/delete")
@@ -91,6 +103,26 @@ def follower_users(
     db: Session = Depends(get_db),
 ):
     return follow_service.list_relations(db, user_id, viewer, followers=True, limit=limit, offset=offset)
+
+
+@router.get("/{user_id}/likes", response_model=LikePage)
+def user_likes(
+    user_id: int = Path(gt=0), limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0), viewer: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """用户公开的点赞列表；对方隐藏时返回 403（本人除外）。"""
+    return interaction_service.list_user_likes(db, user_id, viewer, limit=limit, offset=offset)
+
+
+@router.get("/{user_id}/collections", response_model=CollectionPage)
+def user_collections(
+    user_id: int = Path(gt=0), limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0), viewer: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """用户公开的收藏列表；对方隐藏时返回 403（本人除外）。"""
+    return interaction_service.list_user_collections(db, user_id, viewer, limit=limit, offset=offset)
 
 
 @router.get("/{user_id}/ripples", response_model=list[RippleOut])

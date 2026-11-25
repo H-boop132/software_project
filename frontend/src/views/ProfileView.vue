@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { deleteMyRipple, fetchMyRipples, getMoodTones, updateRipple } from '@/api/ripples'
 import type { EmotionOut, LikeOut, MyRippleOut, MyRippleStatus, RippleOut, UserProfile } from '@/api/types'
-import { changeMyPassword, deleteMyAccount, fetchUserProfile, updateMyProfile } from '@/api/users'
+import { changeMyPassword, deleteMyAccount, fetchUserProfile, updateMyPrivacy, updateMyProfile } from '@/api/users'
 import { cleanupUpload, uploadImage } from '@/api/upload'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
@@ -249,6 +249,45 @@ function handleProfileDialogClosed() {
   if (draftAvatar && draftAvatar !== user.value?.avatar_url) void cleanupUpload(draftAvatar)
 }
 
+/* ---------- 账号设置：主页可见范围 ---------- */
+const privacyDialog = reactive({
+  visible: false,
+  hide_following: false,
+  hide_followers: false,
+  hide_likes: false,
+  hide_collections: false,
+})
+const savingPrivacy = ref(false)
+
+function openPrivacyDialog() {
+  if (!user.value) return
+  privacyDialog.hide_following = user.value.hide_following
+  privacyDialog.hide_followers = user.value.hide_followers
+  privacyDialog.hide_likes = user.value.hide_likes
+  privacyDialog.hide_collections = user.value.hide_collections
+  privacyDialog.visible = true
+}
+
+async function submitPrivacy() {
+  if (savingPrivacy.value) return
+  savingPrivacy.value = true
+  try {
+    await updateMyPrivacy({
+      hide_following: privacyDialog.hide_following,
+      hide_followers: privacyDialog.hide_followers,
+      hide_likes: privacyDialog.hide_likes,
+      hide_collections: privacyDialog.hide_collections,
+    })
+    await userStore.refreshMe()
+    if (user.value) {
+      try { social.value = await fetchUserProfile(user.value.id) } catch { /* 忽略统计刷新失败 */ }
+    }
+    privacyDialog.visible = false
+    ElMessage.success('主页可见范围已更新')
+  } catch { /* 全局提示 */ }
+  finally { savingPrivacy.value = false }
+}
+
 /* ---------- 账号设置：修改密码 / 注销账号 ---------- */
 const passwordDialog = reactive({ visible: false, oldPassword: '', newPassword: '', confirm: '' })
 const changingPassword = ref(false)
@@ -370,6 +409,13 @@ onMounted(async () => {
           <span>修改后当前登录状态不受影响，下次登录使用新密码。</span>
         </div>
         <el-button @click="openPasswordDialog">修改密码</el-button>
+      </div>
+      <div class="account-row">
+        <div class="account-copy">
+          <strong>主页可见范围</strong>
+          <span>关注、粉丝、喜欢、收藏列表可分别隐藏；隐藏后仅自己可见，关注/粉丝数量仍会显示。</span>
+        </div>
+        <el-button @click="openPrivacyDialog">设置可见范围</el-button>
       </div>
       <div class="account-row">
         <div class="account-copy">
@@ -529,6 +575,32 @@ onMounted(async () => {
         <el-button type="primary" :loading="savingProfile" @click="submitProfile">保存</el-button>
       </template>
     </el-dialog>
+    <!-- 主页可见范围弹窗 -->
+    <el-dialog v-model="privacyDialog.visible" title="主页可见范围"
+      width="min(500px, calc(100% - 32px))" :close-on-click-modal="!savingPrivacy"
+      :close-on-press-escape="!savingPrivacy" :show-close="!savingPrivacy">
+      <p class="privacy-hint">关闭的列表仅自己可见，访客打开时会看到「该用户的某个列表不对外开放」。</p>
+      <div class="privacy-row">
+        <div class="privacy-copy"><strong>关注列表</strong><span>你关注的人</span></div>
+        <el-switch v-model="privacyDialog.hide_following" active-text="仅自己可见" inactive-text="公开" :disabled="savingPrivacy" />
+      </div>
+      <div class="privacy-row">
+        <div class="privacy-copy"><strong>粉丝列表</strong><span>关注你的人</span></div>
+        <el-switch v-model="privacyDialog.hide_followers" active-text="仅自己可见" inactive-text="公开" :disabled="savingPrivacy" />
+      </div>
+      <div class="privacy-row">
+        <div class="privacy-copy"><strong>喜欢列表</strong><span>你点过爱心的微澜</span></div>
+        <el-switch v-model="privacyDialog.hide_likes" active-text="仅自己可见" inactive-text="公开" :disabled="savingPrivacy" />
+      </div>
+      <div class="privacy-row">
+        <div class="privacy-copy"><strong>收藏列表</strong><span>你收藏的微澜</span></div>
+        <el-switch v-model="privacyDialog.hide_collections" active-text="仅自己可见" inactive-text="公开" :disabled="savingPrivacy" />
+      </div>
+      <template #footer>
+        <el-button :disabled="savingPrivacy" @click="privacyDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="savingPrivacy" @click="submitPrivacy">保存可见范围</el-button>
+      </template>
+    </el-dialog>
     <!-- 修改密码弹窗 -->
     <el-dialog v-model="passwordDialog.visible" title="修改密码"
       width="min(440px, calc(100% - 32px))" :close-on-click-modal="!changingPassword"
@@ -616,6 +688,30 @@ onMounted(async () => {
   color: var(--wl-muted);
   font-size: 12.5px;
 }
+
+.privacy-hint {
+  margin: 0 0 10px;
+  color: var(--wl-muted);
+  font-size: 13px;
+}
+
+.privacy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--wl-border);
+  flex-wrap: wrap;
+}
+
+.privacy-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.privacy-copy strong { font-size: 14px; }
+.privacy-copy span { color: var(--wl-muted); font-size: 12.5px; }
 
 .me {
   display: flex;

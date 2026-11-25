@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchUserProfile, fetchUserRipples } from '@/api/users'
 import type { CollectionOut, LikeOut, RippleOut, UserProfile } from '@/api/types'
 import FollowButton from '@/components/FollowButton.vue'
+import MyCollections from '@/components/MyCollections.vue'
+import MyLikes from '@/components/MyLikes.vue'
 import RippleCard from '@/components/RippleCard.vue'
 import UserRelations from '@/components/UserRelations.vue'
 import { useUserStore } from '@/stores/user'
+
+type UserTab = 'ripples' | 'following' | 'followers' | 'likes' | 'collections'
+type PrivacyFlag = 'hide_following' | 'hide_followers' | 'hide_likes' | 'hide_collections'
+
+function tabFromQuery(value: unknown): UserTab {
+  return value === 'following' || value === 'followers' || value === 'likes' || value === 'collections'
+    ? value
+    : 'ripples'
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -16,9 +27,15 @@ const ripples = ref<RippleOut[]>([])
 const loading = ref(false)
 const failed = ref(false)
 const more = ref(false)
-const tab = ref('ripples')
+const tab = ref<UserTab>(tabFromQuery(route.query.tab))
 const relationsVersion = ref(0)
 let version = 0
+
+const isOwner = computed(() => !!profile.value && profile.value.id === store.user?.id)
+
+function hidden(flag: PrivacyFlag) {
+  return !!profile.value && !isOwner.value && profile.value[flag]
+}
 
 function updateProfile(user: UserProfile) {
   profile.value = user
@@ -78,11 +95,12 @@ function updateCollection(state: CollectionOut) {
   if (ripple) ripple.is_collected = state.is_collected
 }
 function changeTab(value: string | number) {
-  void router.replace({ query: { ...route.query, tab: value === 'ripples' ? undefined : String(value) } })
+  const name = String(value)
+  void router.replace({ query: { ...route.query, tab: name === 'ripples' ? undefined : name } })
 }
 watch(() => route.params.id, () => { void load() }, { immediate: true })
 watch(() => route.query.tab, (value) => {
-  tab.value = value === 'following' || value === 'followers' ? value : 'ripples'
+  tab.value = tabFromQuery(value)
 }, { immediate: true })
 onBeforeUnmount(() => { version++ })
 </script>
@@ -103,8 +121,8 @@ onBeforeUnmount(() => { version++ })
         </div>
         <p>{{ profile.bio || '这个人还没有写签名' }}</p>
         <div class="relations-summary">
-          <button @click="changeTab('following')">关注 {{ profile.following_count }}</button>
-          <button @click="changeTab('followers')">粉丝 {{ profile.follower_count }}</button>
+          <button @click="changeTab('following')">关注 {{ profile.following_count }}<span v-if="hidden('hide_following')">（私密）</span></button>
+          <button @click="changeTab('followers')">粉丝 {{ profile.follower_count }}<span v-if="hidden('hide_followers')">（私密）</span></button>
           <span v-if="profile.follows_you && profile.id !== store.user?.id">{{ profile.is_following ? '你们已互相关注' : 'TA 关注了你' }}</span>
         </div>
       </section>
@@ -114,8 +132,34 @@ onBeforeUnmount(() => { version++ })
           <div v-if="!loading && !ripples.length" class="empty-tip">还没有公开的微澜</div>
           <el-button v-if="more" :loading="loading" @click="loadMore">加载更多</el-button>
         </el-tab-pane>
-        <el-tab-pane label="关注" name="following"><UserRelations v-if="tab === 'following'" :key="relationsVersion" :user-id="profile.id" kind="following" @changed="refreshProfile" /></el-tab-pane>
-        <el-tab-pane label="粉丝" name="followers"><UserRelations v-if="tab === 'followers'" :key="relationsVersion" :user-id="profile.id" kind="followers" @changed="refreshProfile" /></el-tab-pane>
+        <el-tab-pane :label="hidden('hide_following') ? '关注（私密）' : '关注'" name="following">
+          <div v-if="tab === 'following' && hidden('hide_following')" class="private-notice">
+            <strong>{{ profile.nickname }} 的关注列表不对外开放</strong>
+            <span>对方在个人主页设置了仅自己可见。</span>
+          </div>
+          <UserRelations v-else-if="tab === 'following'" :key="relationsVersion" :user-id="profile.id" kind="following" @changed="refreshProfile" />
+        </el-tab-pane>
+        <el-tab-pane :label="hidden('hide_followers') ? '粉丝（私密）' : '粉丝'" name="followers">
+          <div v-if="tab === 'followers' && hidden('hide_followers')" class="private-notice">
+            <strong>{{ profile.nickname }} 的粉丝列表不对外开放</strong>
+            <span>对方在个人主页设置了仅自己可见。</span>
+          </div>
+          <UserRelations v-else-if="tab === 'followers'" :key="relationsVersion" :user-id="profile.id" kind="followers" @changed="refreshProfile" />
+        </el-tab-pane>
+        <el-tab-pane :label="hidden('hide_likes') ? '喜欢（私密）' : '喜欢'" name="likes">
+          <div v-if="tab === 'likes' && hidden('hide_likes')" class="private-notice">
+            <strong>{{ profile.nickname }} 的喜欢列表不对外开放</strong>
+            <span>对方在个人主页设置了仅自己可见。</span>
+          </div>
+          <MyLikes v-else-if="tab === 'likes'" :user-id="profile.id" :own="isOwner" @like-updated="updateLike" />
+        </el-tab-pane>
+        <el-tab-pane :label="hidden('hide_collections') ? '收藏（私密）' : '收藏'" name="collections">
+          <div v-if="tab === 'collections' && hidden('hide_collections')" class="private-notice">
+            <strong>{{ profile.nickname }} 的收藏列表不对外开放</strong>
+            <span>对方在个人主页设置了仅自己可见。</span>
+          </div>
+          <MyCollections v-else-if="tab === 'collections'" :user-id="profile.id" :own="isOwner" @like-updated="updateLike" />
+        </el-tab-pane>
       </el-tabs>
     </template>
   </div>
@@ -131,4 +175,17 @@ onBeforeUnmount(() => { version++ })
 .relations-summary { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .relations-summary button { border: 0; background: transparent; color: var(--wl-primary); cursor: pointer; padding: 6px 0; font: inherit; }
 .relations-summary span { color: #78909c; font-size: 13px; }
+.private-notice {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0;
+  padding: 22px 20px;
+  border: 1px dashed var(--wl-border);
+  border-radius: 10px;
+  background: #f7fbfc;
+  color: var(--wl-muted);
+  text-align: center;
+}
+.private-notice strong { color: var(--wl-ink); font-size: 15px; }
+.private-notice span { font-size: 13px; }
 </style>

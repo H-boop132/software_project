@@ -1,5 +1,5 @@
 import request from './request'
-import type { RippleOut, UserOut, UserPage, UserProfile } from './types'
+import type { CollectionPage, LikePage, RippleOut, UserOut, UserPage, UserProfile } from './types'
 
 export interface UserUpdatePayload {
   nickname?: string
@@ -14,6 +14,17 @@ export function fetchUserProfile(id: number) {
 
 export function updateMyProfile(data: UserUpdatePayload) {
   return request.put<unknown, UserOut>('/users/me', data)
+}
+
+export interface UserPrivacyPayload {
+  hide_following?: boolean
+  hide_followers?: boolean
+  hide_likes?: boolean
+  hide_collections?: boolean
+}
+
+export function updateMyPrivacy(data: UserPrivacyPayload) {
+  return request.put<unknown, UserOut>('/users/me/privacy', data)
 }
 
 /** 修改密码（校验原密码，新密码 ≥6 位） */
@@ -38,4 +49,12 @@ export function fetchUserRelations(id: number, kind: 'following' | 'followers', 
 
 export function fetchUserRipples(id: number, params: { limit: number; offset: number }) {
   return request.get<unknown, RippleOut[]>(`/users/${id}/ripples`, { params })
+}
+
+export function fetchUserLikes(id: number, params: { limit: number; offset: number }) {
+  return request.get<unknown, LikePage>(`/users/${id}/likes`, { params })
+}
+
+export function fetchUserCollections(id: number, params: { limit: number; offset: number }) {
+  return request.get<unknown, CollectionPage>(`/users/${id}/collections`, { params })
 }

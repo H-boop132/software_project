@@ -6,6 +6,26 @@ from sqlalchemy.orm import Session
 from app.models import Follow, Notification, User
 from app.schemas.user import UserPage, UserProfile
 
+# 主页四类列表的隐私开关与提示文案
+PRIVACY_FLAGS = {
+    "following": ("hide_following", "关注列表"),
+    "followers": ("hide_followers", "粉丝列表"),
+    "likes": ("hide_likes", "喜欢列表"),
+    "collections": ("hide_collections", "收藏列表"),
+}
+
+
+def ensure_list_visible(target: User, viewer: User | None, kind: str) -> None:
+    """被访客查看隐藏列表时拒绝；本人始终可以查看自己的列表。"""
+    if viewer is not None and viewer.id == target.id:
+        return
+    flag, label = PRIVACY_FLAGS[kind]
+    if getattr(target, flag):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"该用户的{label}不对外开放",
+        )
+
 
 def require_user(db: Session, user_id: int) -> User:
     user = db.get(User, user_id)
@@ -78,7 +98,8 @@ def list_relations(
     db: Session, user_id: int, viewer: User | None, *,
     followers: bool, limit: int, offset: int,
 ) -> UserPage:
-    require_user(db, user_id)
+    target = require_user(db, user_id)
+    ensure_list_visible(target, viewer, "followers" if followers else "following")
     owner = Follow.followee_id if followers else Follow.follower_id
     other = Follow.follower_id if followers else Follow.followee_id
     total = db.scalar(select(func.count(Follow.id)).where(owner == user_id)) or 0

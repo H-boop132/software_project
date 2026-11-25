@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchMyLikes } from '@/api/interactions'
+import { fetchUserLikes } from '@/api/users'
 import type { LikeOut, RippleOut } from '@/api/types'
 import RippleCard from '@/components/RippleCard.vue'
 
+const props = withDefaults(defineProps<{ userId?: number; own?: boolean }>(), { own: true })
 const emit = defineEmits<{ 'like-updated': [state: LikeOut] }>()
 const items = ref<RippleOut[]>([])
 const total = ref(0)
@@ -18,7 +20,9 @@ async function loadLikes(targetPage = page.value) {
   loading.value = true
   failed.value = false
   try {
-    const result = await fetchMyLikes({ limit: pageSize, offset: (targetPage - 1) * pageSize })
+    const result = props.userId
+      ? await fetchUserLikes(props.userId, { limit: pageSize, offset: (targetPage - 1) * pageSize })
+      : await fetchMyLikes({ limit: pageSize, offset: (targetPage - 1) * pageSize })
     if (version !== requestVersion) return
     const lastPage = Math.max(1, Math.ceil(result.total / pageSize))
     // 取消最后一条喜欢后，自动回到仍有内容的有效页。
@@ -43,8 +47,8 @@ function updateLike(state: LikeOut) {
     ripple.like_count = state.like_count
   }
   emit('like-updated', state)
-  // 取消点赞后这条不再属于「我的喜欢」，重新拉取当前页
-  if (!state.is_liked) void loadLikes()
+  // 只有自己的喜欢列表会因取消点赞而减少；看别人的列表时，自己的点赞操作不改变对方的列表。
+  if (props.own && !state.is_liked) void loadLikes()
 }
 
 onMounted(() => { void loadLikes() })
@@ -52,7 +56,7 @@ onBeforeUnmount(() => { requestVersion++ })
 </script>
 
 <template>
-  <section aria-label="我的喜欢">
+  <section :aria-label="props.own ? '我的喜欢' : 'TA 的喜欢'">
     <div class="likes-toolbar">
       <span v-if="!failed" aria-live="polite">共 {{ total }} 条喜欢</span>
       <span v-else>喜欢加载失败，请重试</span>
@@ -70,8 +74,8 @@ onBeforeUnmount(() => { requestVersion++ })
           @like-updated="updateLike"
         />
         <div v-if="!loading && total === 0" class="empty-tip">
-          <p>还没有喜欢的微澜，去时间线点亮爱心吧。</p>
-          <router-link to="/">浏览时间线</router-link>
+          <p>{{ props.own ? '还没有喜欢的微澜，去时间线点亮爱心吧。' : 'TA 还没有喜欢的微澜。' }}</p>
+          <router-link v-if="props.own" to="/">浏览时间线</router-link>
         </div>
       </template>
     </div>

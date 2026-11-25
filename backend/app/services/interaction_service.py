@@ -8,6 +8,7 @@ from app.schemas.interaction import (
     CollectionOut, CollectionPage, EchoLikeOut, LikeOut, LikePage,
 )
 from app.services.ripple_service import ripples_to_out
+from app.services.follow_service import ensure_list_visible, require_user
 
 
 def _lock_public_ripple(db: Session, ripple_id: int) -> int:
@@ -171,7 +172,16 @@ def list_likes(
     db: Session, user: User, limit: int = 20, offset: int = 0
 ) -> LikePage:
     """本人点赞过的公开微澜，按点赞时间从新到旧排列。"""
-    filters = (Like.user_id == user.id, Ripple.status == "published")
+    return list_user_likes(db, user.id, user, limit=limit, offset=offset)
+
+
+def list_user_likes(
+    db: Session, user_id: int, viewer: User | None, limit: int = 20, offset: int = 0
+) -> LikePage:
+    """指定用户公开可见的点赞列表；隐藏时仅本人可读。"""
+    target = require_user(db, user_id)
+    ensure_list_visible(target, viewer, "likes")
+    filters = (Like.user_id == user_id, Ripple.status == "published")
     total = db.scalar(
         select(func.count(Like.id))
         .join(Ripple, Ripple.id == Like.ripple_id)
@@ -186,7 +196,7 @@ def list_likes(
         .offset(offset)
     ).all()
     return LikePage(
-        items=ripples_to_out(db, list(ripples), current_user=user),
+        items=ripples_to_out(db, list(ripples), current_user=viewer),
         total=total, limit=limit, offset=offset,
     )
 
@@ -194,8 +204,17 @@ def list_likes(
 def list_collections(
     db: Session, user: User, limit: int = 20, offset: int = 0
 ) -> CollectionPage:
-    """仅返回本人的公开收藏；数量与分页使用相同可见性条件。"""
-    filters = (Collection.user_id == user.id, Ripple.status == "published")
+    """本人公开收藏；数量与分页使用相同可见性条件。"""
+    return list_user_collections(db, user.id, user, limit=limit, offset=offset)
+
+
+def list_user_collections(
+    db: Session, user_id: int, viewer: User | None, limit: int = 20, offset: int = 0
+) -> CollectionPage:
+    """指定用户公开可见的收藏列表；隐藏时仅本人可读。"""
+    target = require_user(db, user_id)
+    ensure_list_visible(target, viewer, "collections")
+    filters = (Collection.user_id == user_id, Ripple.status == "published")
     total = db.scalar(
         select(func.count(Collection.id))
         .join(Ripple, Ripple.id == Collection.ripple_id)
@@ -210,6 +229,6 @@ def list_collections(
         .offset(offset)
     ).all()
     return CollectionPage(
-        items=ripples_to_out(db, list(ripples), current_user=user),
+        items=ripples_to_out(db, list(ripples), current_user=viewer),
         total=total, limit=limit, offset=offset,
     )

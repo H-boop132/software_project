@@ -7,6 +7,10 @@ export interface UserOut {
   avatar_url: string | null
   bio: string | null
   mood_tone: string | null
+  hide_following: boolean
+  hide_followers: boolean
+  hide_likes: boolean
+  hide_collections: boolean
   role: string
   ban_status: string
   ban_until: string | null
@@ -40,6 +44,10 @@ export interface UserProfile {
   following_count: number
   is_following: boolean
   follows_you: boolean
+  hide_following: boolean
+  hide_followers: boolean
+  hide_likes: boolean
+  hide_collections: boolean
 }
 
 export interface UserPage {
