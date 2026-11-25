@@ -128,6 +128,26 @@ class EchoInteractionTests(MySQLIntegrationTestCase):
         self.assertEqual(self.notifications(2)["items"], [])
         self.assertEqual(self.notifications(2)["unread_count"], 0)
 
+    def test_echo_like_notifies_author_per_actor(self):
+        self.assertEqual(self.set_echo_like(actor=1).status_code, 200)
+        notices = self.notifications(2)["items"]
+        self.assertEqual([(n["kind"], n["echo_id"], n["ripple_id"]) for n in notices],
+                         [("echo_like", 1, 1)])
+        self.assertEqual(notices[0]["actor_name"], "用户1")
+
+        self.assertEqual(self.set_echo_like(actor=1).status_code, 200)
+        self.assertEqual(len(self.notifications(2)["items"]), 1)
+
+        self.assertEqual(self.set_echo_like(actor=3).status_code, 200)
+        self.assertEqual(len(self.notifications(2)["items"]), 2)
+
+        self.assertEqual(self.set_echo_like(actor=1, liked=False).status_code, 200)
+        self.assertEqual([n["actor_id"] for n in self.notifications(2)["items"]], [3])
+
+        # 自己点赞自己的回声不产生通知
+        self.assertEqual(self.set_echo_like(echo_id=2, actor=3).status_code, 200)
+        self.assertEqual(self.notifications(3)["items"], [])
+
     def test_like_notice_survives_actor_like_count(self):
         """通知按操作人去重，不因同一用户重复点击而增长。"""
         for _ in range(3):

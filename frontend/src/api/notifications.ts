@@ -1,6 +1,6 @@
 import request from './request'
 
-export type NotificationKind = 'echo' | 'reply' | 'follow' | 'moderation' | 'like' | 'collection'
+export type NotificationKind = 'echo' | 'reply' | 'follow' | 'moderation' | 'like' | 'collection' | 'echo_like'
 
 export interface NotificationItem {
   id: number

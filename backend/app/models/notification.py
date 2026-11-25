@@ -14,7 +14,7 @@ class Notification(Base):
     recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     actor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(12))
-    echo_id: Mapped[int | None] = mapped_column(ForeignKey("echoes.id", ondelete="CASCADE"), unique=True)
+    echo_id: Mapped[int | None] = mapped_column(ForeignKey("echoes.id", ondelete="CASCADE"))
     follow_id: Mapped[int | None] = mapped_column(ForeignKey("follows.id", ondelete="CASCADE"), unique=True)
     ripple_id: Mapped[int | None] = mapped_column(
         ForeignKey("ripples.id", ondelete="SET NULL"), default=None,

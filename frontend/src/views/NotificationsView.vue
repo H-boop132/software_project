@@ -26,6 +26,7 @@ const descriptions = {
   moderation: '处理了你的内容',
   like: '点赞了你的微澜',
   collection: '收藏了你的微澜',
+  echo_like: '点赞了你的回声',
 }
 
 function destination(item: NotificationItem) {
@@ -106,8 +107,9 @@ onBeforeUnmount(() => { loadVersion++ })
           <option value="echo">回应微澜</option>
           <option value="reply">回复回声</option>
           <option value="follow">新关注</option>
-          <option value="like">点赞</option>
+          <option value="like">点赞微澜</option>
           <option value="collection">收藏</option>
+          <option value="echo_like">点赞回声</option>
           <option value="moderation">内容处理</option>
         </select>
       </label>
@@ -118,7 +120,7 @@ onBeforeUnmount(() => { loadVersion++ })
       <li v-for="item in items" :key="item.id" :class="{ unread: !item.read_at }">
         <router-link :to="destination(item)" custom v-slot="{ href }">
           <a :href="href" class="inbox-item" @click="openMessage($event, item)">
-            <span class="item-icon"><component :is="item.kind === 'follow' ? User : item.kind === 'moderation' ? Warning : item.kind === 'like' || item.kind === 'collection' ? Star : ChatDotRound" aria-hidden="true" /></span>
+            <span class="item-icon"><component :is="item.kind === 'follow' ? User : item.kind === 'moderation' ? Warning : item.kind === 'like' || item.kind === 'collection' || item.kind === 'echo_like' ? Star : ChatDotRound" aria-hidden="true" /></span>
             <span class="item-copy">
               <span><strong>{{ item.actor_name }}</strong> {{ descriptions[item.kind] }}<span v-if="!item.read_at" class="unread-dot" title="未读">未读</span></span>
               <span v-if="item.note" class="preview note">{{ item.note }}</span>
