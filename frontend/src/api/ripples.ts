@@ -1,5 +1,5 @@
 import request from './request'
-import type { EchoDeleteOut, EchoOut, EchoPayload, EmotionOut, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
+import type { EchoDeleteOut, EchoLikeOut, EchoOut, EchoPayload, EmotionOut, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
 
 export interface RipplePayload {
   content: string
@@ -58,6 +58,12 @@ export function createEcho(rippleId: number, data: EchoPayload) {
 
 export function deleteEcho(echoId: number) {
   return request.delete<unknown, EchoDeleteOut>(`/echoes/${echoId}`)
+}
+
+export function setEchoLike(echoId: number, liked: boolean) {
+  return liked
+    ? request.put<unknown, EchoLikeOut>(`/echoes/${echoId}/like`)
+    : request.delete<unknown, EchoLikeOut>(`/echoes/${echoId}/like`)
 }
 
 export function getHotTides() {

@@ -7,7 +7,7 @@ from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session, lazyload
 
 from app.core.storage import delete_upload_if_unused
-from app.models import Collection, Echo, Emotion, Follow, Like, Ripple, RippleReview, Topic, TopicSubscription, User
+from app.models import Collection, Echo, EchoLike, Emotion, Follow, Like, Ripple, RippleReview, Topic, TopicSubscription, User
 from app.schemas.ripple import (
     AuthorReviewOut,
     EchoOut,
@@ -291,7 +291,9 @@ def get_ripple_detail(
         .where(Echo.root_ripple_id == ripple_id)
         .order_by(Echo.created_at.asc(), Echo.id.asc())
     ).all()
-    return RippleDetail(ripple=ripple_out, echoes=_build_echo_tree(echoes))
+    return RippleDetail(
+        ripple=ripple_out, echoes=_build_echo_tree(echoes, db, current_user)
+    )
 
 
 def update_ripple(
@@ -343,14 +345,40 @@ def delete_own_ripple(db: Session, user: User, ripple_id: int) -> None:
         delete_upload_if_unused(db, url)
 
 
-def _build_echo_tree(echoes: list[Echo]) -> list[EchoOut]:
-    """把平铺回声组装成涟漪树（第一版按时间序挂到父节点）"""
+def _build_echo_tree(
+    echoes: list[Echo], db: Session, current_user: User | None = None
+) -> list[EchoOut]:
+    """把平铺回声组装成涟漪树，并补齐点赞数与回复对象。"""
+    counts: dict[int, int] = {}
+    liked: set[int] = set()
+    if echoes:
+        ids = [e.id for e in echoes]
+        counts = dict(
+            db.execute(
+                select(EchoLike.echo_id, func.count(EchoLike.id))
+                .where(EchoLike.echo_id.in_(ids))
+                .group_by(EchoLike.echo_id)
+            ).all()
+        )
+        if current_user is not None:
+            liked = set(
+                db.scalars(
+                    select(EchoLike.echo_id).where(
+                        EchoLike.user_id == current_user.id,
+                        EchoLike.echo_id.in_(ids),
+                    )
+                )
+            )
     nodes: dict[int, EchoOut] = {e.id: EchoOut.model_validate(e) for e in echoes}
+    for echo_id, node in nodes.items():
+        node.like_count = counts.get(echo_id, 0)
+        node.is_liked = echo_id in liked
     roots: list[EchoOut] = []
     for e in echoes:
         node = nodes[e.id]
         parent = nodes.get(e.parent_echo_id or -1)
         if parent is not None:
+            node.reply_to_user = parent.user
             parent.children.append(node)
         else:
             roots.append(node)

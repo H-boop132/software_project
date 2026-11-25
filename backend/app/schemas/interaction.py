@@ -15,6 +15,12 @@ class CollectionOut(BaseModel):
     is_collected: bool
 
 
+class EchoLikeOut(BaseModel):
+    echo_id: int
+    is_liked: bool
+    like_count: int
+
+
 class CollectionPage(BaseModel):
     items: list[RippleOut]
     total: int

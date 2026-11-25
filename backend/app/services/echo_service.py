@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Echo, Emotion, Notification, Ripple, User
 from app.schemas.ripple import EchoCreate, EchoDeleteOut, EchoOut
+from app.schemas.user import UserBrief
 
 MAX_ECHO_DEPTH = 8
 
@@ -49,7 +50,12 @@ def create_echo(db: Session, user: User, ripple_id: int, data: EchoCreate) -> Ec
         ))
     db.commit()
     db.refresh(echo)
-    return EchoOut.model_validate(echo)
+    out = EchoOut.model_validate(echo)
+    if data.parent_echo_id is not None:
+        parent_echo = db.get(Echo, data.parent_echo_id)
+        if parent_echo is not None and parent_echo.user is not None:
+            out.reply_to_user = UserBrief.model_validate(parent_echo.user)
+    return out
 
 
 def delete_echo(db: Session, user: User, echo_id: int) -> EchoDeleteOut:

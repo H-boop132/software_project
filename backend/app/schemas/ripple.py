@@ -104,6 +104,9 @@ class EchoOut(BaseModel):
     emotion: EmotionOut | None = None
     user: UserBrief
     parent_echo_id: int | None = None
+    reply_to_user: UserBrief | None = None
+    like_count: int = 0
+    is_liked: bool = False
     created_at: datetime
     children: list["EchoOut"] = Field(default_factory=list)
 

@@ -1,5 +1,5 @@
 """ORM 模型汇总导出"""
-from app.models.interaction import Collection, Follow, Like
+from app.models.interaction import Collection, EchoLike, Follow, Like
 from app.models.moderation import RippleReview, UserBan
 from app.models.notification import Notification
 from app.models.ripple import Echo, Ripple
@@ -14,6 +14,7 @@ __all__ = [
     "Ripple",
     "Echo",
     "Like",
+    "EchoLike",
     "Follow",
     "Collection",
     "UserBan",

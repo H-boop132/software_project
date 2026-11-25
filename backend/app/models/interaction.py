@@ -1,4 +1,4 @@
-"""互动模型：点赞 / 关注 / 收藏"""
+"""互动模型：点赞 / 回声点赞 / 关注 / 收藏"""
 from datetime import datetime
 
 from sqlalchemy import BigInteger, ForeignKey, UniqueConstraint
@@ -17,6 +17,21 @@ class Like(Base):
     )
     ripple_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("ripples.id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class EchoLike(Base):
+    """对回声（回复）的点赞，与微澜点赞分开计数"""
+    __tablename__ = "echo_likes"
+    __table_args__ = (UniqueConstraint("user_id", "echo_id", name="uk_user_echo"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE")
+    )
+    echo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("echoes.id", ondelete="CASCADE")
     )
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 

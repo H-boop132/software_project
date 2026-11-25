@@ -9,15 +9,21 @@ from app.schemas.notification import NotificationKind, NotificationOut, Notifica
 
 
 def _visible_messages(user_id: int):
-    """下架后不返回回声正文、链接或未读数。"""
+    """下架后不返回回声正文、链接或未读数；点赞/收藏通知也随内容一起隐藏。"""
     visible_echo = (
         select(Echo.id).join(Ripple, Ripple.id == Echo.root_ripple_id)
         .where(Echo.id == Notification.echo_id, Ripple.status == "published")
         .correlate(Notification).exists()
     )
+    visible_ripple = (
+        select(Ripple.id)
+        .where(Ripple.id == Notification.ripple_id, Ripple.status == "published")
+        .correlate(Notification).exists()
+    )
     return (
         Notification.recipient_id == user_id,
         or_(Notification.echo_id.is_(None), visible_echo),
+        or_(Notification.kind.notin_(("like", "collection")), visible_ripple),
     )
 
 

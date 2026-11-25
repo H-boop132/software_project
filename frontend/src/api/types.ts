@@ -95,12 +95,21 @@ export interface CollectionPage {
   offset: number
 }
 
+export interface EchoLikeOut {
+  echo_id: number
+  is_liked: boolean
+  like_count: number
+}
+
 export interface EchoOut {
   id: number
   content: string
   emotion: EmotionOut | null
   user: UserBrief
   parent_echo_id: number | null
+  reply_to_user: UserBrief | null
+  like_count: number
+  is_liked: boolean
   created_at: string
   children: EchoOut[]
 }

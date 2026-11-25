@@ -13,6 +13,7 @@ USE `weilan`;
 DROP TABLE IF EXISTS `user_bans`;
 DROP TABLE IF EXISTS `ripple_reviews`;
 DROP TABLE IF EXISTS `notifications`;
+DROP TABLE IF EXISTS `echo_likes`;
 DROP TABLE IF EXISTS `echoes`;
 DROP TABLE IF EXISTS `likes`;
 DROP TABLE IF EXISTS `follows`;
@@ -121,6 +122,21 @@ CREATE TABLE `echoes` (
 ) ENGINE = InnoDB COMMENT = '回声（回应）';
 
 -- ------------------------------------------------------------
+-- 回声点赞表（回复本身也可以被点赞）
+-- ------------------------------------------------------------
+CREATE TABLE `echo_likes` (
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '回声点赞ID',
+    `user_id`    BIGINT UNSIGNED NOT NULL COMMENT '点赞者',
+    `echo_id`    BIGINT UNSIGNED NOT NULL COMMENT '被点赞回声',
+    `created_at` DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '点赞时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_echo` (`user_id`, `echo_id`),
+    KEY `idx_echo` (`echo_id`),
+    CONSTRAINT `fk_echo_likes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)   ON DELETE CASCADE,
+    CONSTRAINT `fk_echo_likes_echo` FOREIGN KEY (`echo_id`) REFERENCES `echoes` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB COMMENT = '回声点赞';
+
+-- ------------------------------------------------------------
 -- 点赞表（对微澜）
 -- ------------------------------------------------------------
 CREATE TABLE `likes` (
@@ -216,6 +232,7 @@ CREATE TABLE IF NOT EXISTS `notifications` (
     KEY `idx_notifications_recipient_id` (`recipient_id`, `id`),
     KEY `idx_notifications_recipient_read` (`recipient_id`, `read_at`),
     KEY `idx_notifications_ripple` (`ripple_id`),
+    KEY `idx_notifications_actor_kind_ripple` (`actor_id`, `kind`, `ripple_id`),
     UNIQUE KEY `uk_notification_echo` (`echo_id`),
     UNIQUE KEY `uk_notification_follow` (`follow_id`),
     CONSTRAINT `fk_notifications_recipient` FOREIGN KEY (`recipient_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
