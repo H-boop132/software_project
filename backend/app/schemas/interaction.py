@@ -26,3 +26,10 @@ class CollectionPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class LikePage(BaseModel):
+    items: list[RippleOut]
+    total: int
+    limit: int
+    offset: int

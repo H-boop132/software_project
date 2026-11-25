@@ -5,10 +5,21 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas.interaction import CollectionOut, CollectionPage, LikeOut
-from app.services.interaction_service import list_collections, set_collection, set_like
+from app.schemas.interaction import CollectionOut, CollectionPage, LikeOut, LikePage
+from app.services.interaction_service import list_collections, list_likes, set_collection, set_like
 
 router = APIRouter()
+
+
+@router.get("/likes", response_model=LikePage)
+def my_likes(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """分页查看本人点赞过的公开微澜，按点赞时间从新到旧排列。"""
+    return list_likes(db, user, limit=limit, offset=offset)
 
 
 @router.get("/collections", response_model=CollectionPage)

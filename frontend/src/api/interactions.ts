@@ -1,5 +1,5 @@
 import request from './request'
-import type { CollectionOut, CollectionPage, LikeOut } from './types'
+import type { CollectionOut, CollectionPage, LikeOut, LikePage } from './types'
 
 export function setRippleLike(rippleId: number, liked: boolean) {
   const url = `/interactions/ripples/${rippleId}/like`
@@ -17,4 +17,8 @@ export function setRippleCollection(rippleId: number, collected: boolean) {
 
 export function fetchMyCollections(params: { limit?: number; offset?: number } = {}) {
   return request.get<unknown, CollectionPage>('/interactions/collections', { params })
+}
+
+export function fetchMyLikes(params: { limit?: number; offset?: number } = {}) {
+  return request.get<unknown, LikePage>('/interactions/likes', { params })
 }

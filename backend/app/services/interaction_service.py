@@ -4,7 +4,9 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import Collection, Echo, EchoLike, Like, Notification, Ripple, User
-from app.schemas.interaction import CollectionOut, CollectionPage, EchoLikeOut, LikeOut
+from app.schemas.interaction import (
+    CollectionOut, CollectionPage, EchoLikeOut, LikeOut, LikePage,
+)
 from app.services.ripple_service import ripples_to_out
 
 
@@ -163,6 +165,30 @@ def set_echo_like(db: Session, user: User, echo_id: int, liked: bool) -> EchoLik
         ).where(EchoLike.echo_id == echo_id)
     ).one()
     return EchoLikeOut(echo_id=echo_id, is_liked=own_count > 0, like_count=count)
+
+
+def list_likes(
+    db: Session, user: User, limit: int = 20, offset: int = 0
+) -> LikePage:
+    """本人点赞过的公开微澜，按点赞时间从新到旧排列。"""
+    filters = (Like.user_id == user.id, Ripple.status == "published")
+    total = db.scalar(
+        select(func.count(Like.id))
+        .join(Ripple, Ripple.id == Like.ripple_id)
+        .where(*filters)
+    ) or 0
+    ripples = db.scalars(
+        select(Ripple)
+        .join(Like, Like.ripple_id == Ripple.id)
+        .where(*filters)
+        .order_by(Like.created_at.desc(), Like.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return LikePage(
+        items=ripples_to_out(db, list(ripples), current_user=user),
+        total=total, limit=limit, offset=offset,
+    )
 
 
 def list_collections(

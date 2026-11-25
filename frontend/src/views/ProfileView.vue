@@ -10,21 +10,26 @@ import { changeMyPassword, deleteMyAccount, fetchUserProfile, updateMyProfile } 
 import { cleanupUpload, uploadImage } from '@/api/upload'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
+import MyLikes from '@/components/MyLikes.vue'
 
 const userStore = useUserStore()
 const { isLoggedIn, user } = storeToRefs(userStore)
 const route = useRoute()
 const router = useRouter()
-const activeTab = ref(route.query.tab === 'collections' ? 'collections' : 'ripples')
+
+function tabFromQuery(tab: unknown): 'ripples' | 'likes' | 'collections' {
+  return tab === 'likes' || tab === 'collections' ? tab : 'ripples'
+}
+
+const activeTab = ref(tabFromQuery(route.query.tab))
 
 function changeTab(name: string | number) {
-  void router.replace({
-    query: { ...route.query, tab: name === 'collections' ? 'collections' : undefined },
-  })
+  const tab = name === 'likes' || name === 'collections' ? name : undefined
+  void router.replace({ query: { ...route.query, tab } })
 }
 
 watch(() => route.query.tab, (tab) => {
-  activeTab.value = tab === 'collections' ? 'collections' : 'ripples'
+  activeTab.value = tabFromQuery(tab)
 })
 
 const myRipples = ref<MyRippleOut[]>([])
@@ -438,6 +443,9 @@ onMounted(async () => {
             </nav>
             </template>
           </div>
+        </el-tab-pane>
+        <el-tab-pane label="我的喜欢" name="likes">
+          <MyLikes v-if="activeTab === 'likes'" @like-updated="updateLike" />
         </el-tab-pane>
         <el-tab-pane label="我的收藏" name="collections">
           <MyCollections v-if="activeTab === 'collections'" @like-updated="updateLike" />

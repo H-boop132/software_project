@@ -95,6 +95,13 @@ export interface CollectionPage {
   offset: number
 }
 
+export interface LikePage {
+  items: RippleOut[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface EchoLikeOut {
   echo_id: number
   is_liked: boolean
