@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast } from '@/utils/toast'
 import {
   approveRipple,
   banRipple,
@@ -8,6 +9,10 @@ import {
   deleteRipple,
   getAdminStats,
   getReviewHistory,
+  handleAdminAppeal,
+  handleAdminReport,
+  listAdminAppeals,
+  listAdminReports,
   listAdminRipples,
   listAdminUsers,
   listPendingReviews,
@@ -18,7 +23,7 @@ import {
   type AdminUserStatus,
   type ReviewLog,
 } from '@/api/admin'
-import type { RippleOut, UserOut } from '@/api/types'
+import type { AppealOut, AppealStatus, ReportOut, ReportStatus, RippleOut, UserOut } from '@/api/types'
 
 const activeTab = ref('stats')
 
@@ -31,6 +36,12 @@ const loading = ref(false)
 const loadingUsers = ref(false)
 const loadingRipples = ref(false)
 const loadingLogs = ref(false)
+const reports = ref<ReportOut[]>([])
+const appeals = ref<AppealOut[]>([])
+const loadingReports = ref(false)
+const loadingAppeals = ref(false)
+const reportStatus = ref<ReportStatus>('pending')
+const appealStatus = ref<AppealStatus>('pending')
 
 /* ---------------- 用户筛选（关键词 + 封禁状态） ---------------- */
 const userKeyword = ref('')
@@ -149,8 +160,101 @@ function reviewAction(action: string) {
     ban: { type: 'danger', text: '封禁' },
     reject: { type: 'warning', text: '驳回' },
     approve: { type: 'success', text: '通过' },
+    appeal_approve: { type: 'success', text: '申诉通过' },
+    appeal_reject: { type: 'warning', text: '申诉驳回' },
   }
   return map[action] || { type: 'info', text: action }
+}
+
+const reportReasonLabels: Record<string, string> = {
+  spam: '广告 / 引流', abuse: '攻击 / 骚扰', misinformation: '不实信息',
+  illegal: '违法违规', other: '其他',
+}
+
+function reportStatusMeta(value: ReportStatus) {
+  const map: Record<ReportStatus, { type: 'success' | 'danger' | 'warning' | 'info'; text: string }> = {
+    pending: { type: 'warning', text: '待处理' },
+    uphold: { type: 'danger', text: '举报成立' },
+    dismissed: { type: 'success', text: '未发现违规' },
+  }
+  return map[value]
+}
+
+function appealStatusMeta(value: AppealStatus) {
+  const map: Record<AppealStatus, { type: 'success' | 'danger' | 'warning' | 'info'; text: string }> = {
+    pending: { type: 'warning', text: '待处理' },
+    approved: { type: 'success', text: '申诉通过' },
+    rejected: { type: 'danger', text: '申诉驳回' },
+  }
+  return map[value]
+}
+
+async function loadReports() {
+  loadingReports.value = true
+  try {
+    const page = await listAdminReports({ limit: 100, status: reportStatus.value })
+    reports.value = page.items
+  } finally {
+    loadingReports.value = false
+  }
+}
+
+async function loadAppeals() {
+  loadingAppeals.value = true
+  try {
+    const page = await listAdminAppeals({ limit: 100, status: appealStatus.value })
+    appeals.value = page.items
+  } finally {
+    loadingAppeals.value = false
+  }
+}
+
+async function processReport(row: ReportOut, action: 'uphold' | 'dismiss') {
+  let note: string | null = null
+  try {
+    const result = await ElMessageBox.prompt(
+      action === 'uphold'
+        ? '确认后该微澜将被下架，同一内容的其它待处理举报一并结案。可填写处理说明（举报人和作者都会看到）'
+        : '可填写处理说明（举报人会看到）',
+      action === 'uphold' ? '举报成立' : '举报不成立',
+      {
+        confirmButtonText: action === 'uphold' ? '成立并下架' : '不成立',
+        cancelButtonText: '取消', inputType: 'textarea',
+        inputPlaceholder: '处理说明（选填，最多 200 字）',
+      },
+    )
+    note = result.value.trim() || null
+  } catch { return }
+  await handleAdminReport(row.id, { action, note })
+  toast.success(action === 'uphold' ? '举报成立，内容已下架，已通知举报人与作者' : '举报已关闭，已通知举报人')
+  loadReports()
+  loadBase()
+  loadRipples()
+  loadReviewLogs()
+  loadAppeals()
+}
+
+async function processAppeal(row: AppealOut, action: 'approve' | 'reject') {
+  let note: string | null = null
+  try {
+    const result = await ElMessageBox.prompt(
+      action === 'approve' ? '通过后该微澜将恢复公开。可填写处理说明（作者会看到）' : '驳回后该微澜维持下架。可填写处理说明（作者会看到）',
+      action === 'approve' ? '申诉通过' : '申诉驳回',
+      {
+        confirmButtonText: action === 'approve' ? '恢复公开' : '维持下架',
+        cancelButtonText: '取消', inputType: 'textarea',
+        inputPlaceholder: '处理说明（选填，最多 200 字）',
+      },
+    )
+    note = result.value.trim() || null
+  } catch { return }
+  await handleAdminAppeal(row.id, { action, note })
+  toast.success(action === 'approve' ? '申诉通过，内容已恢复公开，已通知作者' : '申诉驳回，内容维持下架，已通知作者')
+  loadAppeals()
+  loadBase()
+  loadRipples()
+  loadReviewLogs()
+  loadReports()
 }
 
 async function loadBase() {
@@ -184,10 +288,10 @@ async function confirmBan() {
       duration_days: banDialog.duration,
       reason: banDialog.reason || null,
     })
-    ElMessage.success(`已封禁用户「${(target as UserOut).nickname}」，已通知本人`)
+    toast.success(`已封禁用户「${(target as UserOut).nickname}」，已通知本人`)
   } else {
     await banRipple(target.id, { reason: banDialog.reason || null })
-    ElMessage.success(`已封禁微澜「${(target as RippleOut).content.slice(0, 12)}…」（仅作者可见），已通知作者`)
+    toast.success(`已封禁微澜「${(target as RippleOut).content.slice(0, 12)}…」（仅作者可见），已通知作者`)
   }
   banDialog.visible = false
   loadBase()
@@ -198,7 +302,7 @@ async function confirmBan() {
 
 async function releaseUser(user: UserOut) {
   await unbanUser(user.id)
-  ElMessage.success(`已解封「${user.nickname}」，已同步通知本人`)
+  toast.success(`已解封「${user.nickname}」，已同步通知本人`)
   loadBase()
   loadUsers()
 }
@@ -213,7 +317,7 @@ function openBanRipple(r: RippleOut) {
 
 async function passReview(r: RippleOut) {
   await approveRipple(r.id)
-  ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已通过审核，恢复公开，已通知作者`)
+  toast.success(`微澜「${r.content.slice(0, 12)}…」已通过审核，恢复公开，已通知作者`)
   loadBase()
   loadRipples()
   loadReviewLogs()
@@ -227,7 +331,7 @@ async function rejectReview(r: RippleOut) {
       inputType: 'textarea',
     })
     await rejectRipple(r.id, { reason: value || null })
-    ElMessage.success(`微澜「${r.content.slice(0, 12)}…」已驳回（仅作者可见），已通知作者`)
+    toast.success(`微澜「${r.content.slice(0, 12)}…」已驳回（仅作者可见），已通知作者`)
     loadBase()
     loadRipples()
     loadReviewLogs()
@@ -247,7 +351,7 @@ async function removeRipple(r: RippleOut) {
     return
   }
   await deleteRipple(r.id)
-  ElMessage.success('已删除，已通知作者')
+  toast.success('已删除，已通知作者')
   loadBase()
   loadRipples()
   loadReviewLogs()
@@ -258,6 +362,8 @@ onMounted(() => {
   loadUsers()
   loadRipples()
   loadReviewLogs()
+  loadReports()
+  loadAppeals()
 })
 </script>
 
@@ -301,8 +407,16 @@ onMounted(() => {
             <div class="stat-num">{{ stats?.banned_ripples ?? '-' }}</div>
             <div class="stat-label">封禁微澜</div>
           </div>
+          <div class="stat-card">
+            <div class="stat-num">{{ stats?.pending_reports ?? '-' }}</div>
+            <div class="stat-label">待处理举报</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">{{ stats?.pending_appeals ?? '-' }}</div>
+            <div class="stat-label">待处理申诉</div>
+          </div>
         </div>
-        <p class="tip">审核队列中待处理 {{ stats?.pending ?? reviews.length }} 条</p>
+        <p class="tip">审核队列中待处理 {{ stats?.pending ?? reviews.length }} 条 · 举报 {{ stats?.pending_reports ?? 0 }} 条 · 申诉 {{ stats?.pending_appeals ?? 0 }} 条</p>
       </el-tab-pane>
 
       <!-- 审核队列 -->
@@ -357,6 +471,110 @@ onMounted(() => {
             </el-table-column>
           </el-table>
           <div v-if="!loadingLogs && reviewLogs.length === 0" class="empty-tip">还没有审核记录</div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 举报处理 -->
+      <el-tab-pane :label="`举报处理${reports.length ? `（${reports.length}）` : ''}`" name="reports">
+        <div class="filter-bar">
+          <el-select v-model="reportStatus" style="width: 150px" @change="loadReports">
+            <el-option label="待处理" value="pending" />
+            <el-option label="举报成立" value="uphold" />
+            <el-option label="未发现违规" value="dismissed" />
+          </el-select>
+          <span class="muted">举报成立会下架微澜，并同时通知举报人与作者</span>
+        </div>
+        <div class="card">
+          <el-table v-loading="loadingReports" :data="reports" size="small">
+            <el-table-column label="被举报内容" min-width="220">
+              <template #default="{ row }">{{ row.ripple_content }}</template>
+            </el-table-column>
+            <el-table-column label="作者" width="105">
+              <template #default="{ row }">{{ row.author_name }}</template>
+            </el-table-column>
+            <el-table-column label="举报人" width="105">
+              <template #default="{ row }">{{ row.reporter_name }}</template>
+            </el-table-column>
+            <el-table-column label="理由" width="100">
+              <template #default="{ row }">{{ reportReasonLabels[row.reason_code] || row.reason_code }}</template>
+            </el-table-column>
+            <el-table-column label="补充说明" min-width="150">
+              <template #default="{ row }">
+                <span :class="{ muted: !row.detail }">{{ row.detail || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="105">
+              <template #default="{ row }">
+                <el-tag :type="reportStatusMeta(row.status).type" size="small">{{ reportStatusMeta(row.status).text }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="处理说明" min-width="140">
+              <template #default="{ row }">
+                <span :class="{ muted: !row.handle_note }">{{ row.handle_note || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="举报时间" min-width="150">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <template v-if="row.status === 'pending'">
+                  <el-button type="danger" size="small" link @click="processReport(row, 'uphold')">成立并下架</el-button>
+                  <el-button type="success" size="small" link @click="processReport(row, 'dismiss')">不成立</el-button>
+                </template>
+                <span v-else class="muted">已处理</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!loadingReports && reports.length === 0" class="empty-tip">当前没有该状态的举报</div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 申诉处理 -->
+      <el-tab-pane :label="`申诉处理${appeals.length ? `（${appeals.length}）` : ''}`" name="appeals">
+        <div class="filter-bar">
+          <el-select v-model="appealStatus" style="width: 150px" @change="loadAppeals">
+            <el-option label="待处理" value="pending" />
+            <el-option label="申诉通过" value="approved" />
+            <el-option label="申诉驳回" value="rejected" />
+          </el-select>
+          <span class="muted">只有被下架内容的作者可以申诉；通过后恢复公开</span>
+        </div>
+        <div class="card">
+          <el-table v-loading="loadingAppeals" :data="appeals" size="small">
+            <el-table-column label="申诉内容" min-width="220">
+              <template #default="{ row }">{{ row.ripple_content }}</template>
+            </el-table-column>
+            <el-table-column label="作者" width="105">
+              <template #default="{ row }">{{ row.user_name }}</template>
+            </el-table-column>
+            <el-table-column label="申诉理由" min-width="190">
+              <template #default="{ row }">{{ row.reason }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="105">
+              <template #default="{ row }">
+                <el-tag :type="appealStatusMeta(row.status).type" size="small">{{ appealStatusMeta(row.status).text }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="处理说明" min-width="140">
+              <template #default="{ row }">
+                <span :class="{ muted: !row.handle_note }">{{ row.handle_note || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="申诉时间" min-width="150">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" fixed="right">
+              <template #default="{ row }">
+                <template v-if="row.status === 'pending'">
+                  <el-button type="success" size="small" link @click="processAppeal(row, 'approve')">通过</el-button>
+                  <el-button type="warning" size="small" link @click="processAppeal(row, 'reject')">驳回</el-button>
+                </template>
+                <span v-else class="muted">已处理</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!loadingAppeals && appeals.length === 0" class="empty-tip">当前没有该状态的申诉</div>
         </div>
       </el-tab-pane>
 

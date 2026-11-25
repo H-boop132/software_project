@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import EmotionOut, TopicOut
 from app.schemas.media import is_upload_url
+from app.schemas.report import AppealBriefOut
 from app.schemas.user import UserBrief
 
 
@@ -28,7 +29,7 @@ class RippleOut(BaseModel):
 
 
 class AuthorReviewOut(BaseModel):
-    action: Literal["ban", "approve", "reject"]
+    action: Literal["ban", "approve", "reject", "appeal_approve", "appeal_reject"]
     reason: str | None
     created_at: datetime
 
@@ -37,6 +38,7 @@ class AuthorReviewOut(BaseModel):
 
 class MyRippleOut(RippleOut):
     latest_review: AuthorReviewOut | None = None
+    latest_appeal: AppealBriefOut | None = None
 
 
 def _validate_images(v: list[str] | None) -> list[str] | None:
@@ -116,6 +118,8 @@ class EchoOut(BaseModel):
 class RippleDetail(BaseModel):
     ripple: RippleOut
     echoes: list[EchoOut] = Field(default_factory=list)
+    report_status: Literal["pending", "uphold", "dismissed"] | None = None
+    latest_appeal: AppealBriefOut | None = None
 
 
 class TideOut(BaseModel):

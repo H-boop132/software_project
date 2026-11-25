@@ -82,7 +82,68 @@ export interface RippleOut {
 export type MyRippleStatus = 'published' | 'banned' | 'pending'
 
 export interface MyRippleOut extends RippleOut {
-  latest_review: { action: 'ban' | 'approve' | 'reject'; reason: string | null; created_at: string } | null
+  latest_review: { action: 'ban' | 'approve' | 'reject' | 'appeal_approve' | 'appeal_reject'; reason: string | null; created_at: string } | null
+  latest_appeal: AppealBrief | null
+}
+
+export type ReportReason = 'spam' | 'abuse' | 'misinformation' | 'illegal' | 'other'
+export type ReportStatus = 'pending' | 'uphold' | 'dismissed'
+export type AppealStatus = 'pending' | 'approved' | 'rejected'
+
+export interface AppealBrief {
+  id: number
+  status: AppealStatus
+  reason: string
+  handle_note: string | null
+  created_at: string
+  handled_at: string | null
+}
+
+export interface ReportOut {
+  id: number
+  ripple_id: number
+  reporter_id: number
+  reporter_name: string
+  reason_code: ReportReason
+  detail: string | null
+  status: ReportStatus
+  handle_note: string | null
+  created_at: string
+  handled_at: string | null
+  ripple_content: string
+  ripple_status: string
+  author_id: number
+  author_name: string
+}
+
+export interface AppealOut {
+  id: number
+  ripple_id: number
+  user_id: number
+  user_name: string
+  reason: string
+  status: AppealStatus
+  handle_note: string | null
+  created_at: string
+  handled_at: string | null
+  ripple_content: string
+  ripple_status: string
+  author_id: number
+  author_name: string
+}
+
+export interface ReportPage {
+  items: ReportOut[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface AppealPage {
+  items: AppealOut[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface LikeOut {
@@ -143,6 +204,8 @@ export interface EchoDeleteOut {
 export interface RippleDetail {
   ripple: RippleOut
   echoes: EchoOut[]
+  report_status: ReportStatus | null
+  latest_appeal: AppealBrief | null
 }
 
 export interface TideOut {

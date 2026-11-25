@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { ChatDotRound, Refresh } from '@element-plus/icons-vue'
 import type { InputInstance } from 'element-plus'
-import { createEcho, deleteEcho, getRippleDetail } from '@/api/ripples'
-import type { CollectionOut, EchoOut, LikeOut, RippleDetail } from '@/api/types'
+import { createEcho, deleteEcho, getRippleDetail, reportRipple, appealRipple } from '@/api/ripples'
+import type { CollectionOut, EchoOut, LikeOut, ReportReason, RippleDetail } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
 import CollectionButton from '@/components/CollectionButton.vue'
@@ -30,6 +31,23 @@ const composer = ref<HTMLElement | null>(null)
 const input = ref<InputInstance>()
 const interactive = computed(() => detail.value?.ripple.status === 'published' && !posting.value && !deleting.value && !loading.value)
 const canDeleteSelected = computed(() => selectedEcho.value && (selectedEcho.value.user.id === store.user?.id || store.user?.role === 'admin'))
+const isAuthor = computed(() => !!detail.value && detail.value.ripple.user.id === store.user?.id)
+const canReport = computed(() => !!store.user && !isAuthor.value && detail.value?.ripple.status === 'published')
+const reportLabel = computed(() =>
+  detail.value?.report_status === 'pending' ? '举报审核中' : '举报'
+)
+const appealLabel = computed(() => {
+  const appeal = detail.value?.latest_appeal
+  if (appeal?.status === 'pending') return '申诉审核中'
+  if (appeal?.status === 'rejected') return '再次申诉'
+  return '申诉'
+})
+const reportStatusLabels: Record<string, string> = {
+  pending: '待处理', uphold: '举报成立', dismissed: '未发现违规',
+}
+const appealStatusLabels: Record<string, string> = {
+  pending: '待处理', approved: '申诉通过', rejected: '申诉驳回',
+}
 let requestVersion = 0
 
 function depthOf(id: number, nodes = detail.value?.echoes || [], level = 1): number {
@@ -66,7 +84,7 @@ async function reply(echo: EchoOut | null) {
 async function submitEcho() {
   if (!interactive.value) return
   const text = content.value.trim()
-  if (!text) { ElMessage.warning('回声内容不能为空'); return }
+  if (!text) { toast.warning('回声内容不能为空'); return }
   const id = Number(route.params.id)
   posting.value = true
   try {
@@ -77,7 +95,7 @@ async function submitEcho() {
     replyTarget.value = null
     selectedEcho.value = null
     await loadDetail()
-    ElMessage.success('回声已发出')
+    toast.success('回声已发出')
   } catch { /* 全局提示；保留未提交成功的内容 */ }
   finally { if (Number(route.params.id) === id) posting.value = false }
 }
@@ -96,7 +114,7 @@ async function removeEcho(echo: EchoOut) {
     replyTarget.value = null
     selectedEcho.value = null
     await loadDetail()
-    ElMessage.success('回声及其回复已删除')
+    toast.success('回声及其回复已删除')
   } catch { /* 全局提示 */ }
   finally { if (Number(route.params.id) === id) deleting.value = false }
 }
@@ -112,6 +130,59 @@ function updateCollection(state: CollectionOut) {
   if (detail.value && detail.value.ripple.id === state.ripple_id) {
     detail.value.ripple.is_collected = state.is_collected
   }
+}
+
+/* ---------- 举报 / 申诉 ---------- */
+const reportDialog = reactive({ visible: false, submitting: false, reason_code: 'spam' as ReportReason, detail: '' })
+const appealDialog = reactive({ visible: false, submitting: false, reason: '' })
+const reportReasons: { value: ReportReason; label: string }[] = [
+  { value: 'spam', label: '广告 / 引流' },
+  { value: 'abuse', label: '攻击 / 骚扰' },
+  { value: 'misinformation', label: '不实信息' },
+  { value: 'illegal', label: '违法违规' },
+  { value: 'other', label: '其他' },
+]
+
+function openReport() {
+  reportDialog.reason_code = 'spam'
+  reportDialog.detail = ''
+  reportDialog.visible = true
+}
+
+async function submitReport() {
+  const id = detail.value?.ripple.id
+  if (!id) return
+  reportDialog.submitting = true
+  try {
+    await reportRipple(id, {
+      reason_code: reportDialog.reason_code,
+      detail: reportDialog.detail.trim() || null,
+    })
+    if (detail.value?.ripple.id === id) detail.value.report_status = 'pending'
+    reportDialog.visible = false
+    toast.success('举报已提交，管理员处理后会在消息中心通知你')
+  } catch { /* 全局提示 */ }
+  finally { reportDialog.submitting = false }
+}
+
+function openAppeal() {
+  appealDialog.reason = ''
+  appealDialog.visible = true
+}
+
+async function submitAppeal() {
+  const id = detail.value?.ripple.id
+  const reason = appealDialog.reason.trim()
+  if (!id) return
+  if (!reason) { toast.warning('请填写申诉理由'); return }
+  appealDialog.submitting = true
+  try {
+    await appealRipple(id, { reason })
+    appealDialog.visible = false
+    await loadDetail()
+    toast.success('申诉已提交，处理结果会在消息中心通知你')
+  } catch { /* 全局提示 */ }
+  finally { appealDialog.submitting = false }
 }
 
 /* ---------- 图片放大预览 ---------- */
@@ -142,6 +213,8 @@ watch(() => route.params.id, () => {
   emotion.value = null
   posting.value = false
   deleting.value = false
+  reportDialog.visible = false
+  appealDialog.visible = false
   viewer.visible = false
   void loadDetail()
 }, { immediate: true })
@@ -190,8 +263,59 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
           <span>💬 {{ detail.ripple.echo_count }}</span>
           <LikeButton :ripple="detail.ripple" @updated="updateLike" />
           <CollectionButton :ripple="detail.ripple" @updated="updateCollection" />
+          <el-button
+            v-if="canReport"
+            link
+            type="warning"
+            :disabled="detail.report_status === 'pending'"
+            @click="openReport"
+          >{{ reportLabel }}</el-button>
         </div>
       </div>
+
+      <section v-if="isAuthor && detail.ripple.status === 'banned'" class="card appeal-panel" aria-label="微澜申诉状态">
+        <div>
+          <strong>这条微澜已被下架，仅你可见</strong>
+          <p v-if="detail.latest_appeal">
+            最新申诉：{{ appealStatusLabels[detail.latest_appeal.status] }}
+            <span v-if="detail.latest_appeal.handle_note"> · {{ detail.latest_appeal.handle_note }}</span>
+          </p>
+          <p v-else>如果你认为处理有误，可以提交申诉，由管理员复核。</p>
+        </div>
+        <el-button
+          v-if="detail.latest_appeal?.status !== 'pending'"
+          type="primary"
+          plain
+          @click="openAppeal"
+        >{{ appealLabel }}</el-button>
+        <el-tag v-else type="warning" effect="plain">申诉审核中</el-tag>
+      </section>
+
+      <el-dialog v-model="reportDialog.visible" title="举报这条微澜" width="480px" append-to-body>
+        <el-form label-width="78px" @submit.prevent>
+          <el-form-item label="举报理由">
+            <el-select v-model="reportDialog.reason_code" style="width: 100%">
+              <el-option v-for="item in reportReasons" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="补充说明">
+            <el-input v-model="reportDialog.detail" type="textarea" :rows="4" maxlength="200" show-word-limit placeholder="可补充具体问题，最多 200 字（选填）" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="reportDialog.visible = false">取消</el-button>
+          <el-button type="warning" :loading="reportDialog.submitting" @click="submitReport">提交举报</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="appealDialog.visible" title="申诉：申请恢复公开" width="480px" append-to-body>
+        <p class="appeal-tip">请说明你认为内容未违规的理由，管理员会结合原文复核。</p>
+        <el-input v-model="appealDialog.reason" type="textarea" :rows="5" maxlength="200" show-word-limit placeholder="填写申诉理由（必填，最多 200 字）" />
+        <template #footer>
+          <el-button @click="appealDialog.visible = false">取消</el-button>
+          <el-button type="primary" :loading="appealDialog.submitting" @click="submitAppeal">提交申诉</el-button>
+        </template>
+      </el-dialog>
 
       <ImageViewer
         v-if="viewer.visible"
@@ -324,4 +448,8 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
 .selected-meta span { font-size: 12px; color: var(--wl-muted); }
 .selected-echo a { color: var(--wl-primary); font-weight: 650; text-underline-offset: 3px; }
 .selected-echo p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.appeal-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 16px; border-left: 4px solid #d8a24a; background: #fffaf0; }
+.appeal-panel strong { color: #7a4f13; }
+.appeal-panel p { margin: 6px 0 0; color: #8a6a3b; font-size: 14px; }
+.appeal-tip { margin: 0 0 12px; color: var(--wl-muted); font-size: 14px; }
 </style>

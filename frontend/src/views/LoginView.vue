@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -20,27 +20,27 @@ async function submit() {
   const username = form.username.trim()
   const nickname = form.nickname.trim()
   if (!username || !form.password) {
-    ElMessage.warning('请填写用户名和密码')
+    toast.warning('请填写用户名和密码')
     return
   }
   if (username.length < 3) {
-    ElMessage.warning('用户名至少 3 个字符')
+    toast.warning('用户名至少 3 个字符')
     return
   }
   if (username.length > 50) {
-    ElMessage.warning('用户名最多 50 个字符')
+    toast.warning('用户名最多 50 个字符')
     return
   }
   if (!/^[A-Za-z0-9]+$/.test(username)) {
-    ElMessage.warning('用户名只能包含字母和数字')
+    toast.warning('用户名只能包含字母和数字')
     return
   }
   if (form.password.length < 6) {
-    ElMessage.warning('密码至少 6 位')
+    toast.warning('密码至少 6 位')
     return
   }
   if (mode.value === 'register' && nickname.length > 50) {
-    ElMessage.warning('昵称最多 50 个字符')
+    toast.warning('昵称最多 50 个字符')
     return
   }
   form.username = username
@@ -48,10 +48,10 @@ async function submit() {
   try {
     if (mode.value === 'login') {
       await userStore.login(username, form.password)
-      ElMessage.success('欢迎回来 🌊')
+      toast.success('欢迎回来 🌊')
     } else {
       await userStore.register(username, nickname || username, form.password)
-      ElMessage.success('注册成功，欢迎来到微澜 🌊')
+      toast.success('注册成功，欢迎来到微澜 🌊')
     }
     // 登录成功后跳回原目标页（无则回首页）
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'

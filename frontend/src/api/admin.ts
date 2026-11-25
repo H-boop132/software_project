@@ -1,5 +1,5 @@
 import request from './request'
-import type { RippleOut, UserOut } from './types'
+import type { AppealOut, AppealPage, AppealStatus, ReportOut, ReportPage, ReportStatus, RippleOut, UserOut } from './types'
 
 export interface AdminStats {
   users: number
@@ -10,6 +10,8 @@ export interface AdminStats {
   pending: number
   banned_users: number
   banned_ripples: number
+  pending_reports: number
+  pending_appeals: number
 }
 
 export type AdminUserStatus = 'active' | 'banned'
@@ -18,7 +20,7 @@ export type AdminRippleStatus = 'published' | 'banned' | 'pending' | 'deleted'
 export interface ReviewLog {
   id: number
   ripple_id: number
-  action: 'ban' | 'approve' | 'reject'
+  action: 'ban' | 'approve' | 'reject' | 'appeal_approve' | 'appeal_reject'
   reason: string | null
   reviewer_id: number
   reviewer_name: string
@@ -88,4 +90,22 @@ export function unbanUser(id: number) {
 
 export function deleteRipple(id: number) {
   return request.delete<unknown, { ok: boolean }>(`/admin/ripples/${id}`)
+}
+
+/** 举报队列（默认待处理） */
+export function listAdminReports(params: { limit?: number; offset?: number; status?: ReportStatus } = {}) {
+  return request.get<unknown, ReportPage>('/admin/reports', { params })
+}
+
+export function handleAdminReport(id: number, data: { action: 'uphold' | 'dismiss'; note?: string | null }) {
+  return request.post<unknown, ReportOut>(`/admin/reports/${id}/handle`, data)
+}
+
+/** 申诉队列（默认待处理） */
+export function listAdminAppeals(params: { limit?: number; offset?: number; status?: AppealStatus } = {}) {
+  return request.get<unknown, AppealPage>('/admin/appeals', { params })
+}
+
+export function handleAdminAppeal(id: number, data: { action: 'approve' | 'reject'; note?: string | null }) {
+  return request.post<unknown, AppealOut>(`/admin/appeals/${id}/handle`, data)
 }

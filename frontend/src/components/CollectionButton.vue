@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { setRippleCollection } from '@/api/interactions'
 import type { CollectionOut, RippleOut } from '@/api/types'
 import { useUserStore } from '@/stores/user'
@@ -15,7 +15,7 @@ const userStore = useUserStore()
 async function toggleCollection() {
   if (pending.value || props.ripple.status !== 'published') return
   if (!userStore.isLoggedIn) {
-    ElMessage.info('请先登录再收藏')
+    toast.info('请先登录再收藏')
     await router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     return
   }

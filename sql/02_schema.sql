@@ -10,6 +10,8 @@ USE `weilan`;
 -- ------------------------------------------------------------
 -- 统一清理旧表（子表在前、父表在后，避免外键引用导致 DROP 失败）
 -- ------------------------------------------------------------
+DROP TABLE IF EXISTS `reports`;
+DROP TABLE IF EXISTS `appeals`;
 DROP TABLE IF EXISTS `user_bans`;
 DROP TABLE IF EXISTS `ripple_reviews`;
 DROP TABLE IF EXISTS `notifications`;
@@ -206,13 +208,13 @@ CREATE TABLE `user_bans` (
 
 -- ------------------------------------------------------------
 -- 微澜审核审计表（封禁/通过/驳回留痕）
--- action：ban 封禁 / approve 审核通过 / reject 审核驳回
+-- action：ban 封禁 / approve 审核通过 / reject 审核驳回 / appeal_approve 申诉通过 / appeal_reject 申诉驳回
 -- ------------------------------------------------------------
 CREATE TABLE `ripple_reviews` (
     `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '记录ID',
     `ripple_id`   BIGINT UNSIGNED NOT NULL COMMENT '被审核微澜',
     `reviewer_id` BIGINT UNSIGNED NOT NULL COMMENT '审核管理员',
-    `action`      VARCHAR(20)     NOT NULL COMMENT '动作：ban/approve/reject',
+    `action`      VARCHAR(20)     NOT NULL COMMENT '动作：ban/approve/reject/appeal_approve/appeal_reject',
     `reason`      VARCHAR(200)    DEFAULT NULL COMMENT '原因',
     `created_at`  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
     PRIMARY KEY (`id`),
@@ -220,6 +222,53 @@ CREATE TABLE `ripple_reviews` (
     CONSTRAINT `fk_reviews_ripple`   FOREIGN KEY (`ripple_id`)   REFERENCES `ripples` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_reviews_reviewer` FOREIGN KEY (`reviewer_id`) REFERENCES `users` (`id`)  ON DELETE CASCADE
 ) ENGINE = InnoDB COMMENT = '微澜审核审计';
+
+-- ------------------------------------------------------------
+-- 举报表：访客举报公开微澜，管理员处理结果会通知举报人
+-- status：pending 待处理 / uphold 举报成立 / dismissed 未发现违规
+-- ------------------------------------------------------------
+CREATE TABLE `reports` (
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '举报ID',
+    `reporter_id` BIGINT UNSIGNED NOT NULL COMMENT '举报人',
+    `ripple_id`   BIGINT UNSIGNED NOT NULL COMMENT '被举报微澜',
+    `reason_code` VARCHAR(20)     NOT NULL COMMENT 'spam/abuse/misinformation/illegal/other',
+    `detail`      VARCHAR(200)    DEFAULT NULL COMMENT '补充说明',
+    `status`      VARCHAR(20)     NOT NULL DEFAULT 'pending' COMMENT 'pending/uphold/dismissed',
+    `handler_id`  BIGINT UNSIGNED DEFAULT NULL COMMENT '处理的管理员',
+    `handle_note` VARCHAR(200)    DEFAULT NULL COMMENT '处理说明（会通知举报人）',
+    `created_at`  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `handled_at`  DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_reports_status_time` (`status`, `created_at`),
+    KEY `idx_reports_ripple` (`ripple_id`),
+    KEY `idx_reports_reporter` (`reporter_id`),
+    CONSTRAINT `fk_reports_reporter` FOREIGN KEY (`reporter_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_reports_ripple` FOREIGN KEY (`ripple_id`) REFERENCES `ripples` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_reports_handler` FOREIGN KEY (`handler_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE = InnoDB COMMENT = '微澜举报';
+
+-- ------------------------------------------------------------
+-- 申诉表：被下架微澜的作者申诉，管理员通过后恢复公开
+-- status：pending 待处理 / approved 申诉通过 / rejected 申诉驳回
+-- ------------------------------------------------------------
+CREATE TABLE `appeals` (
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '申诉ID',
+    `user_id`     BIGINT UNSIGNED NOT NULL COMMENT '申诉作者',
+    `ripple_id`   BIGINT UNSIGNED NOT NULL COMMENT '申诉微澜',
+    `reason`      VARCHAR(200)    NOT NULL COMMENT '申诉理由',
+    `status`      VARCHAR(20)     NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+    `handler_id`  BIGINT UNSIGNED DEFAULT NULL COMMENT '处理的管理员',
+    `handle_note` VARCHAR(200)    DEFAULT NULL COMMENT '处理说明（会通知作者）',
+    `created_at`  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `handled_at`  DATETIME        DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_appeals_status_time` (`status`, `created_at`),
+    KEY `idx_appeals_ripple` (`ripple_id`),
+    KEY `idx_appeals_user` (`user_id`),
+    CONSTRAINT `fk_appeals_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_appeals_ripple` FOREIGN KEY (`ripple_id`) REFERENCES `ripples` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_appeals_handler` FOREIGN KEY (`handler_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE = InnoDB COMMENT = '微澜申诉';
 
 CREATE TABLE IF NOT EXISTS `notifications` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

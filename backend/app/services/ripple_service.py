@@ -7,7 +7,8 @@ from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import Session, lazyload
 
 from app.core.storage import delete_upload_if_unused
-from app.models import Collection, Echo, EchoLike, Emotion, Follow, Like, Ripple, RippleReview, Topic, TopicSubscription, User
+from app.models import Appeal, Collection, Echo, EchoLike, Emotion, Follow, Like, Report, Ripple, RippleReview, Topic, TopicSubscription, User
+from app.schemas.report import AppealBriefOut
 from app.schemas.ripple import (
     AuthorReviewOut,
     EchoOut,
@@ -213,8 +214,21 @@ def list_my_ripples(
         review.ripple_id: AuthorReviewOut.model_validate(review)
         for review in db.scalars(select(RippleReview).where(RippleReview.id.in_(latest_ids)))
     }
+    latest_appeal_ids = (
+        select(func.max(Appeal.id))
+        .where(Appeal.ripple_id.in_([ripple.id for ripple in ripples]))
+        .group_by(Appeal.ripple_id)
+    )
+    appeals = {
+        appeal.ripple_id: AppealBriefOut.model_validate(appeal)
+        for appeal in db.scalars(select(Appeal).where(Appeal.id.in_(latest_appeal_ids)))
+    }
     return [
-        MyRippleOut(**ripple.model_dump(), latest_review=reviews.get(ripple.id))
+        MyRippleOut(
+            **ripple.model_dump(),
+            latest_review=reviews.get(ripple.id),
+            latest_appeal=appeals.get(ripple.id),
+        )
         for ripple in ripples
     ]
 
@@ -291,8 +305,23 @@ def get_ripple_detail(
         .where(Echo.root_ripple_id == ripple_id)
         .order_by(Echo.created_at.asc(), Echo.id.asc())
     ).all()
+    latest_appeal = None
+    if current_user is not None and current_user.id == ripple.user_id:
+        latest_appeal = db.scalars(
+            select(Appeal).where(Appeal.ripple_id == ripple_id).order_by(Appeal.id.desc()).limit(1)
+        ).first()
+    report_status = None
+    if current_user is not None and current_user.id != ripple.user_id:
+        report_status = db.scalar(
+            select(Report.status).where(
+                Report.ripple_id == ripple_id, Report.reporter_id == current_user.id
+            ).order_by(Report.id.desc()).limit(1)
+        )
     return RippleDetail(
-        ripple=ripple_out, echoes=_build_echo_tree(echoes, db, current_user)
+        ripple=ripple_out,
+        echoes=_build_echo_tree(echoes, db, current_user),
+        report_status=report_status,
+        latest_appeal=AppealBriefOut.model_validate(latest_appeal) if latest_appeal else None,
     )
 
 

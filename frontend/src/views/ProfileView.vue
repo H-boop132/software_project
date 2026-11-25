@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { deleteMyRipple, fetchMyRipples, getMoodTones, updateRipple } from '@/api/ripples'
@@ -51,7 +52,13 @@ const filters: { value: MyRippleStatus | ''; label: string }[] = [
   { value: 'banned', label: '需修改' },
 ]
 
-const reviewLabels = { ban: '管理员已下架', reject: '审核未通过', approve: '审核通过' }
+const reviewLabels: Record<string, string> = {
+  ban: '管理员已下架', reject: '审核未通过', approve: '审核通过',
+  appeal_approve: '申诉通过，内容已恢复', appeal_reject: '申诉被驳回，内容维持下架',
+}
+const appealLabels: Record<string, string> = {
+  pending: '申诉待处理', approved: '申诉已通过', rejected: '申诉已驳回',
+}
 
 function updateLike(state: LikeOut) {
   const ripple = myRipples.value.find((item) => item.id === state.ripple_id)
@@ -138,7 +145,7 @@ async function submitEdit() {
   const target = editDialog.target
   if (!target || submitting.value || (target.status !== 'published' && target.status !== 'banned')) return
   if (!editDialog.content.trim()) {
-    ElMessage.warning('内容不能为空')
+    toast.warning('内容不能为空')
     return
   }
   submitting.value = true
@@ -147,7 +154,7 @@ async function submitEdit() {
       content: editDialog.content.trim(),
       expected_status: target.status,
     })
-    ElMessage.success(updated.status === 'pending' ? '已重新提交审核' : '微澜已更新')
+    toast.success(updated.status === 'pending' ? '已重新提交审核' : '微澜已更新')
     editDialog.visible = false
     await loadMyRipples()
   } catch (error) {
@@ -170,7 +177,7 @@ async function removeRipple(ripple: MyRippleOut) {
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
     )
     await deleteMyRipple(ripple.id)
-    ElMessage.success('微澜已删除')
+    toast.success('微澜已删除')
     await loadMyRipples()
   } catch { /* 取消或请求失败时保留当前列表。 */ }
   finally { deleting.value = null }
@@ -222,7 +229,7 @@ async function submitProfile() {
   if (!user.value || savingProfile.value) return
   const nickname = profileDialog.nickname.trim()
   if (!nickname) {
-    ElMessage.warning('昵称不能为空')
+    toast.warning('昵称不能为空')
     return
   }
   savingProfile.value = true
@@ -238,7 +245,7 @@ async function submitProfile() {
       try { social.value = await fetchUserProfile(user.value.id) } catch { /* 忽略统计刷新失败 */ }
     }
     profileDialog.visible = false
-    ElMessage.success('资料已更新')
+    toast.success('资料已更新')
   } catch { /* 全局提示 */ }
   finally { savingProfile.value = false }
 }
@@ -283,7 +290,7 @@ async function submitPrivacy() {
       try { social.value = await fetchUserProfile(user.value.id) } catch { /* 忽略统计刷新失败 */ }
     }
     privacyDialog.visible = false
-    ElMessage.success('主页可见范围已更新')
+    toast.success('主页可见范围已更新')
   } catch { /* 全局提示 */ }
   finally { savingPrivacy.value = false }
 }
@@ -302,15 +309,15 @@ function openPasswordDialog() {
 async function submitPassword() {
   if (changingPassword.value) return
   if (!passwordDialog.oldPassword) {
-    ElMessage.warning('请输入原密码')
+    toast.warning('请输入原密码')
     return
   }
   if (passwordDialog.newPassword.length < 6) {
-    ElMessage.warning('新密码至少 6 位')
+    toast.warning('新密码至少 6 位')
     return
   }
   if (passwordDialog.newPassword !== passwordDialog.confirm) {
-    ElMessage.warning('两次输入的新密码不一致')
+    toast.warning('两次输入的新密码不一致')
     return
   }
   changingPassword.value = true
@@ -321,7 +328,7 @@ async function submitPassword() {
     })
     passwordDialog.visible = false
     userStore.logout()
-    ElMessage.success('密码已修改，请用新密码重新登录')
+    toast.success('密码已修改，请用新密码重新登录')
     await router.push('/login')
   } catch { /* 全局提示 */ }
   finally { changingPassword.value = false }
@@ -338,7 +345,7 @@ function openDeleteDialog() {
 async function submitDeleteAccount() {
   if (deletingAccount.value) return
   if (!deleteDialog.password) {
-    ElMessage.warning('请输入当前密码')
+    toast.warning('请输入当前密码')
     return
   }
   try {
@@ -355,7 +362,7 @@ async function submitDeleteAccount() {
     await deleteMyAccount({ password: deleteDialog.password })
     deleteDialog.visible = false
     userStore.logout()
-    ElMessage.success('账号已注销')
+    toast.success('账号已注销')
     router.push('/login')
   } catch { /* 全局提示 */ }
   finally { deletingAccount.value = false }
@@ -468,6 +475,10 @@ onMounted(async () => {
               <p v-else-if="r.latest_review" class="mr-review">
                 <strong>{{ reviewLabels[r.latest_review.action] }}</strong>
                 <span v-if="r.latest_review.reason">{{ r.latest_review.reason }}</span>
+              </p>
+              <p v-if="r.latest_appeal?.status === 'pending'" class="mr-appeal">
+                <strong>{{ appealLabels[r.latest_appeal.status] }}</strong>
+                <span v-if="r.latest_appeal.reason">{{ r.latest_appeal.reason }}</span>
               </p>
               <div class="mr-action">
                 <router-link :to="{ name: 'ripple-detail', params: { id: r.id } }">查看详情</router-link>
@@ -861,8 +872,9 @@ onMounted(async () => {
 
 .mr-action a { color: var(--wl-primary); font-size: 13px; }
 .mr-action :deep(.el-button + .el-button) { margin-left: 0; }
-.mr-hint, .mr-review { font-size: 13px; color: var(--wl-muted); margin: 8px 0 12px; }
-.mr-review span { margin-left: 8px; overflow-wrap: anywhere; }
+.mr-hint, .mr-review, .mr-appeal { font-size: 13px; color: var(--wl-muted); margin: 8px 0 12px; }
+.mr-review span, .mr-appeal span { margin-left: 8px; overflow-wrap: anywhere; }
+.mr-appeal { color: #8a5a2b; background: #fdf6ec; border-radius: 7px; padding: 8px 10px; }
 .creator-controls, .creator-filters, .creator-search, .creator-pagination {
   display: flex;
   align-items: center;

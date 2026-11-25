@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { useUserStore } from '@/stores/user'
 import { createRipple } from '@/api/ripples'
 import { listTopics } from '@/api/topics'
@@ -97,7 +98,7 @@ watch([content, topicId, emotionCode, images], () => {
 
 onBeforeRouteLeave(() => {
   if (!submitting.value && !uploadsPending.value) return
-  ElMessage.info('请等当前操作完成后再离开')
+  toast.info('请等当前操作完成后再离开')
   return false
 })
 
@@ -119,7 +120,7 @@ async function discardDraft() {
 
 async function handleUpload(file: File) {
   if (images.value.length + uploadsPending.value >= MAX_IMAGES) {
-    ElMessage.warning(`最多上传 ${MAX_IMAGES} 张图片`)
+    toast.warning(`最多上传 ${MAX_IMAGES} 张图片`)
     return
   }
   const key = draftKey.value
@@ -147,7 +148,7 @@ async function submit() {
   const key = draftKey.value
   if (!key || submitting.value || uploadsPending.value) return
   if (!content.value.trim()) {
-    ElMessage.warning('写点内容再发吧')
+    toast.warning('写点内容再发吧')
     return
   }
   submitting.value = true
@@ -160,7 +161,7 @@ async function submit() {
     })
     if (draftKey.value !== key) return
     resetForm()
-    ElMessage.success('微澜已发出，静待回声 🌊')
+    toast.success('微澜已发出，静待回声 🌊')
     submitting.value = false
     router.push('/')
   } finally {

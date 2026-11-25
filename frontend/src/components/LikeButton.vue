@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/toast'
 import { setRippleLike } from '@/api/interactions'
 import type { LikeOut, RippleOut } from '@/api/types'
 import { useUserStore } from '@/stores/user'
@@ -15,7 +15,7 @@ const userStore = useUserStore()
 async function toggleLike() {
   if (pending.value || props.ripple.status !== 'published') return
   if (!userStore.isLoggedIn) {
-    ElMessage.info('请先登录再点赞')
+    toast.info('请先登录再点赞')
     await router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     return
   }

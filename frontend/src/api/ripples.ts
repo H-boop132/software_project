@@ -1,5 +1,5 @@
 import request from './request'
-import type { EchoDeleteOut, EchoLikeOut, EchoOut, EchoPayload, EmotionOut, MoodOut, MyRippleOut, MyRippleStatus, RippleDetail, RippleOut, TideOut } from './types'
+import type { AppealOut, EchoDeleteOut, EchoLikeOut, EchoOut, EchoPayload, EmotionOut, MoodOut, MyRippleOut, MyRippleStatus, ReportOut, ReportReason, RippleDetail, RippleOut, TideOut } from './types'
 
 export interface RipplePayload {
   content: string
@@ -50,6 +50,16 @@ export function deleteMyRipple(id: number) {
 
 export function getRippleDetail(id: number) {
   return request.get<unknown, RippleDetail>(`/ripples/${id}`)
+}
+
+/** 举报公开微澜 */
+export function reportRipple(id: number, data: { reason_code: ReportReason; detail?: string | null }) {
+  return request.post<unknown, ReportOut>(`/ripples/${id}/report`, data)
+}
+
+/** 被下架微澜的作者申诉 */
+export function appealRipple(id: number, data: { reason: string }) {
+  return request.post<unknown, AppealOut>(`/ripples/${id}/appeal`, data)
 }
 
 export function createEcho(rippleId: number, data: EchoPayload) {

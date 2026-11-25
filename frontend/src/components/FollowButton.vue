@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/toast'
 import type { UserProfile } from '@/api/types'
 import { setUserFollow } from '@/api/users'
 import { useUserStore } from '@/stores/user'
@@ -15,7 +15,7 @@ const pending = ref(false)
 async function toggle() {
   if (pending.value) return
   if (!store.isLoggedIn) {
-    ElMessage.info('请先登录再关注')
+    toast.info('请先登录再关注')
     await router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
     return
   }

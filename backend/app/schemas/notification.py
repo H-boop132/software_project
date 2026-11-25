@@ -4,7 +4,10 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-NotificationKind = Literal["echo", "reply", "follow", "moderation", "like", "collection", "echo_like"]
+NotificationKind = Literal[
+    "echo", "reply", "follow", "moderation", "like", "collection", "echo_like",
+    "report", "appeal",
+]
 
 
 class NotificationOut(BaseModel):

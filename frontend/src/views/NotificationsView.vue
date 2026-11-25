@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, ChatDotRound, Star, User, Warning } from '@element-plus/icons-vue'
+import { Bell, ChatDotRound, Flag, RefreshLeft, Star, User, Warning } from '@element-plus/icons-vue'
 import {
   fetchNotifications, markAllNotificationsRead, markNotificationRead,
   type NotificationItem, type NotificationKind,
@@ -27,10 +27,23 @@ const descriptions = {
   like: '点赞了你的微澜',
   collection: '收藏了你的微澜',
   echo_like: '点赞了你的回声',
+  report: '处理了你的举报',
+  appeal: '处理了你的申诉',
+}
+
+function iconFor(kind: NotificationKind) {
+  if (kind === 'follow') return User
+  if (kind === 'moderation') return Warning
+  if (kind === 'report') return Flag
+  if (kind === 'appeal') return RefreshLeft
+  if (kind === 'like' || kind === 'collection' || kind === 'echo_like') return Star
+  return ChatDotRound
 }
 
 function destination(item: NotificationItem) {
-  if (item.kind === 'moderation' || item.kind === 'like' || item.kind === 'collection') {
+  // 举报结果不跳到可能已下架的微澜，落到个人主页避免举报人看到 404。
+  if (item.kind === 'report') return { name: 'profile' }
+  if (item.kind === 'moderation' || item.kind === 'appeal' || item.kind === 'like' || item.kind === 'collection') {
     return item.ripple_id !== null
       ? { name: 'ripple-detail', params: { id: item.ripple_id } }
       : { name: 'profile' }
@@ -110,6 +123,8 @@ onBeforeUnmount(() => { loadVersion++ })
           <option value="like">点赞微澜</option>
           <option value="collection">收藏</option>
           <option value="echo_like">点赞回声</option>
+          <option value="report">举报结果</option>
+          <option value="appeal">申诉结果</option>
           <option value="moderation">内容处理</option>
         </select>
       </label>
@@ -120,7 +135,7 @@ onBeforeUnmount(() => { loadVersion++ })
       <li v-for="item in items" :key="item.id" :class="{ unread: !item.read_at }">
         <router-link :to="destination(item)" custom v-slot="{ href }">
           <a :href="href" class="inbox-item" @click="openMessage($event, item)">
-            <span class="item-icon"><component :is="item.kind === 'follow' ? User : item.kind === 'moderation' ? Warning : item.kind === 'like' || item.kind === 'collection' || item.kind === 'echo_like' ? Star : ChatDotRound" aria-hidden="true" /></span>
+            <span class="item-icon"><component :is="iconFor(item.kind)" aria-hidden="true" /></span>
             <span class="item-copy">
               <span><strong>{{ item.actor_name }}</strong> {{ descriptions[item.kind] }}<span v-if="!item.read_at" class="unread-dot" title="未读">未读</span></span>
               <span v-if="item.note" class="preview note">{{ item.note }}</span>
@@ -133,7 +148,7 @@ onBeforeUnmount(() => { loadVersion++ })
     </ul>
     <p v-if="loading" class="card empty-tip" role="status">正在加载消息…</p>
     <div v-else-if="failed" class="card empty-tip"><p>消息加载失败。</p><el-button @click="load()">重试</el-button></div>
-    <p v-else-if="!items.length" class="card empty-tip">{{ filter || unreadOnly ? '没有符合条件的消息' : '暂无消息。收到回声、回复、关注、点赞、收藏或内容处理结果后会在这里显示。' }}</p>
+    <p v-else-if="!items.length" class="card empty-tip">{{ filter || unreadOnly ? '没有符合条件的消息' : '暂无消息。收到回声、回复、关注、点赞、收藏、举报或申诉处理结果后会在这里显示。' }}</p>
     <div v-if="nextBefore && !failed" class="load-more"><el-button :loading="loading" @click="load(true)">加载更早的消息</el-button></div>
   </section>
 </template>

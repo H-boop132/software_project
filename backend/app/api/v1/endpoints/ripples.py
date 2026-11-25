@@ -9,7 +9,8 @@ from app.core.database import get_db
 from app.deps import get_current_user, get_optional_user
 from app.models.user import User
 from app.schemas.ripple import EchoCreate, EchoOut, MyRippleOut, RippleCreate, RippleDetail, RippleOut, RippleUpdate
-from app.services import echo_service, ripple_service
+from app.schemas.report import AppealCreate, AppealOut, ReportCreate, ReportOut
+from app.services import echo_service, report_service, ripple_service
 
 router = APIRouter()
 
@@ -128,3 +129,21 @@ def create_echo(
 ):
     """发表回声；parent_echo_id 指向同一微澜内的回声时表示回复。"""
     return echo_service.create_echo(db, user, ripple_id, data)
+
+
+@router.post("/{ripple_id}/report", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+def report_ripple(
+    data: ReportCreate, ripple_id: int = Path(gt=0),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """举报公开微澜；同一用户对同一内容只保留一条待处理举报。"""
+    return report_service.create_report(db, user, ripple_id, data)
+
+
+@router.post("/{ripple_id}/appeal", response_model=AppealOut, status_code=status.HTTP_201_CREATED)
+def appeal_ripple(
+    data: AppealCreate, ripple_id: int = Path(gt=0),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """被下架微澜的作者申诉；同一微澜同时只允许一条待处理申诉。"""
+    return report_service.create_appeal(db, user, ripple_id, data)

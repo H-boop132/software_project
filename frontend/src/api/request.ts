@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { toast } from '@/utils/toast'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -93,7 +93,7 @@ request.interceptors.response.use(
     }
     if (!err.config?.silentError) {
       const message = formatDetail(detail) || err.message || '网络错误'
-      ElMessage.error(message)
+      toast.error(message)
     }
     return Promise.reject(err)
   },

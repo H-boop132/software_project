@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.storage import delete_upload_if_unused
-from app.models import Echo, Like, Ripple, RippleReview, Topic, User
+from app.models import Appeal, Echo, Like, Report, Ripple, RippleReview, Topic, User
 from app.schemas.admin import ReviewLogOut
 from app.services.notification_service import notify_author
 
@@ -33,6 +33,12 @@ def get_stats(db: Session, now: datetime | None = None) -> dict:
         )) or 0,
         "banned_ripples": db.scalar(select(func.count(Ripple.id)).where(
             Ripple.status == "banned"
+        )) or 0,
+        "pending_reports": db.scalar(select(func.count(Report.id)).where(
+            Report.status == "pending"
+        )) or 0,
+        "pending_appeals": db.scalar(select(func.count(Appeal.id)).where(
+            Appeal.status == "pending"
         )) or 0,
     }
 

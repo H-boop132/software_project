@@ -13,9 +13,12 @@ from app.core.database import get_db
 from app.deps import get_current_admin
 from app.models.user import User
 from app.schemas.admin import BanUserRequest, ReviewActionRequest, ReviewLogOut
+from app.schemas.report import (
+    AppealHandleRequest, AppealOut, AppealPage, ReportHandleRequest, ReportOut, ReportPage,
+)
 from app.schemas.ripple import RippleOut
 from app.schemas.user import UserOut
-from app.services import admin_service, moderation_service, ripple_service
+from app.services import admin_service, moderation_service, report_service, ripple_service
 
 router = APIRouter()
 
@@ -156,3 +159,54 @@ def delete_ripple(
 ):
     admin_service.delete_ripple(db, admin, ripple_id)
     return {"ok": True, "deleted_ripple_id": ripple_id}
+
+
+# ---------------- 举报与申诉 ----------------
+@router.get("/reports", response_model=ReportPage, tags=["管理"])
+def reports(
+    status_filter: Literal["pending", "uphold", "dismissed"] | None = Query(None, alias="status"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """举报队列，默认查看待处理；可按处理状态筛选。"""
+    return report_service.list_reports(
+        db, status_filter=status_filter or "pending", limit=limit, offset=offset
+    )
+
+
+@router.post("/reports/{report_id}/handle", response_model=ReportOut, tags=["管理"])
+def handle_report(
+    report_id: int,
+    data: ReportHandleRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """举报成立则下架内容并通知作者，结果通知举报人。"""
+    return report_service.handle_report(db, admin, report_id, data)
+
+
+@router.get("/appeals", response_model=AppealPage, tags=["管理"])
+def appeals(
+    status_filter: Literal["pending", "approved", "rejected"] | None = Query(None, alias="status"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """申诉队列，默认查看待处理；可按处理状态筛选。"""
+    return report_service.list_appeals(
+        db, status_filter=status_filter or "pending", limit=limit, offset=offset
+    )
+
+
+@router.post("/appeals/{appeal_id}/handle", response_model=AppealOut, tags=["管理"])
+def handle_appeal(
+    appeal_id: int,
+    data: AppealHandleRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """申诉通过则恢复公开，驳回则维持下架，结果通知作者。"""
+    return report_service.handle_appeal(db, admin, appeal_id, data)
