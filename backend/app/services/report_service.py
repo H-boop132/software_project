@@ -9,6 +9,7 @@ from app.models import Appeal, Notification, Report, Ripple, RippleReview, User
 from app.schemas.report import (
     AppealHandleRequest, AppealOut, AppealPage, AppealCreate, ReportCreate,
     ReportHandleRequest, ReportOut, ReportPage,
+    AppealBriefOut, MyReportOut, MyReportPage, MyAppealOut, MyAppealPage,
 )
 from app.services.notification_service import notify_author
 from app.services.ripple_service import lock_ripple
@@ -146,16 +147,71 @@ def list_appeals(
     )
 
 
+def my_reports(
+    db: Session, user: User, *, status_filter: str | None, limit: int, offset: int,
+) -> MyReportPage:
+    filters = [Report.reporter_id == user.id]
+    if status_filter:
+        filters.append(Report.status == status_filter)
+    total = db.scalar(select(func.count(Report.id)).where(*filters)) or 0
+    rows = db.execute(
+        select(Report, Ripple.content, Ripple.status).join(Ripple)
+        .where(*filters).order_by(Report.id.desc()).limit(limit).offset(offset)
+    ).all()
+    return MyReportPage(
+        items=[
+            MyReportOut(
+                id=item.id, ripple_id=item.ripple_id, reason_code=item.reason_code,
+                detail=item.detail, status=item.status, handle_note=item.handle_note,
+                created_at=item.created_at, handled_at=item.handled_at,
+                ripple_preview=content[:100] if ripple_status == "published" else None,
+                can_open=ripple_status == "published",
+            )
+            for item, content, ripple_status in rows
+        ], total=total, limit=limit, offset=offset,
+    )
+
+
+def my_appeals(
+    db: Session, user: User, *, status_filter: str | None, limit: int, offset: int,
+) -> MyAppealPage:
+    filters = [Appeal.user_id == user.id]
+    if status_filter:
+        filters.append(Appeal.status == status_filter)
+    total = db.scalar(select(func.count(Appeal.id)).where(*filters)) or 0
+    rows = db.execute(
+        select(Appeal, Ripple.content, Ripple.status).join(Ripple)
+        .where(*filters).order_by(Appeal.id.desc()).limit(limit).offset(offset)
+    ).all()
+    return MyAppealPage(
+        items=[
+            MyAppealOut(
+                **AppealBriefOut.model_validate(item).model_dump(),
+                ripple_id=item.ripple_id,
+                ripple_preview=content[:100] if ripple_status != "deleted" else None,
+                can_open=ripple_status != "deleted",
+            )
+            for item, content, ripple_status in rows
+        ], total=total, limit=limit, offset=offset,
+    )
+
+
 def handle_report(
     db: Session, admin: User, report_id: int, data: ReportHandleRequest
 ) -> ReportOut:
     """处理举报：成立时下架内容并同步通知作者；结果通知举报人。"""
-    report = db.get(Report, report_id)
+    ripple_id = db.scalar(select(Report.ripple_id).where(Report.id == report_id))
+    if ripple_id is None:
+        raise HTTPException(status_code=404, detail="举报不存在")
+    ripple = lock_ripple(db, ripple_id, include_deleted=True)
+    report = db.scalar(select(Report).where(Report.id == report_id).with_for_update()
+                       .execution_options(populate_existing=True))
     if report is None:
         raise HTTPException(status_code=404, detail="举报不存在")
     if report.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这条举报已处理")
-    ripple = lock_ripple(db, report.ripple_id)
+    if ripple.status == "deleted" and data.action == "uphold":
+        raise HTTPException(status_code=400, detail="内容已被作者删除，可以关闭举报")
 
     now = datetime.now()
     if data.action == "uphold":
@@ -173,7 +229,7 @@ def handle_report(
         # 同一条内容的其它待处理举报一并结案，避免重复积压。
         pending = db.scalars(select(Report).where(
             Report.ripple_id == ripple.id, Report.status == "pending"
-        )).all()
+        ).with_for_update().execution_options(populate_existing=True)).all()
         for item in pending:
             item.status = "uphold"
             item.handler_id = admin.id
@@ -184,14 +240,15 @@ def handle_report(
                 f"你举报的微澜经核查成立，内容已下架。处理说明：{note}", ripple.id,
             )
     else:
-        note = _clean_note(data.note, "经核查未发现违规")
+        note = _clean_note(data.note, "原内容已删除，举报已关闭" if ripple.status == "deleted" else "经核查未发现违规")
+        result_note = "你举报的微澜已删除，举报已关闭" if ripple.status == "deleted" else "你举报的微澜经核查未发现违规，举报已关闭"
         report.status = "dismissed"
         report.handler_id = admin.id
         report.handle_note = note
         report.handled_at = now
         _notify(
             db, report.reporter_id, admin.id, "report",
-            f"你举报的微澜经核查未发现违规，举报已关闭。处理说明：{note}", ripple.id,
+            f"{result_note}。处理说明：{note}", ripple.id,
         )
     db.commit()
     return _report_query(db, report.id)
@@ -201,18 +258,25 @@ def handle_appeal(
     db: Session, admin: User, appeal_id: int, data: AppealHandleRequest
 ) -> AppealOut:
     """处理申诉：通过则恢复公开，驳回则维持下架；结果通知作者。"""
-    appeal = db.get(Appeal, appeal_id)
+    ripple_id = db.scalar(select(Appeal.ripple_id).where(Appeal.id == appeal_id))
+    if ripple_id is None:
+        raise HTTPException(status_code=404, detail="申诉不存在")
+    ripple = lock_ripple(db, ripple_id, include_deleted=True)
+    appeal = db.scalar(select(Appeal).where(Appeal.id == appeal_id).with_for_update()
+                       .execution_options(populate_existing=True))
     if appeal is None:
         raise HTTPException(status_code=404, detail="申诉不存在")
     if appeal.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="这条申诉已处理")
-    ripple = lock_ripple(db, appeal.ripple_id)
-    if ripple.status != "banned":
+    if ripple.status != "banned" and data.action == "approve":
         raise HTTPException(status_code=400, detail="微澜当前不是已下架状态，无法处理该申诉")
 
+    changed = ripple.status != "banned"
     note = _clean_note(
         data.note,
-        "申诉理由成立，内容恢复公开" if data.action == "approve" else "申诉理由不充分，维持下架",
+        "原内容状态已变更，申诉已关闭" if changed else (
+            "申诉理由成立，内容恢复公开" if data.action == "approve" else "申诉理由不充分，维持下架"
+        ),
     )
     if data.action == "approve":
         ripple.status = "published"
@@ -230,7 +294,7 @@ def handle_appeal(
         ))
         _notify(
             db, ripple.user_id, admin.id, "appeal",
-            f"你的申诉未通过，微澜维持下架。处理说明：{note}", ripple.id,
+            f"你的申诉已处理。处理说明：{note}", ripple.id,
         )
         appeal.status = "rejected"
     appeal.handler_id = admin.id

@@ -97,3 +97,36 @@ class AppealBriefOut(BaseModel):
     handled_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class MyReportOut(BaseModel):
+    id: int
+    ripple_id: int
+    reason_code: ReportReason
+    detail: str | None
+    status: ReportStatus
+    handle_note: str | None
+    created_at: datetime
+    handled_at: datetime | None
+    ripple_preview: str | None
+    can_open: bool
+
+
+class MyReportPage(BaseModel):
+    items: list[MyReportOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class MyAppealOut(AppealBriefOut):
+    ripple_id: int
+    ripple_preview: str | None
+    can_open: bool
+
+
+class MyAppealPage(BaseModel):
+    items: list[MyAppealOut]
+    total: int
+    limit: int
+    offset: int

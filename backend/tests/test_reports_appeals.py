@@ -1,5 +1,6 @@
 """举报 + 申诉闭环：提交、权限、管理员处理、通知与审计。"""
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from app.models import Appeal, Notification, Report, Ripple, RippleReview, User
 from tests.mysql_test_case import MySQLIntegrationTestCase
@@ -43,6 +44,68 @@ class ReportAppealTests(MySQLIntegrationTestCase):
     def report_count(self, ripple_id=1):
         with self.Session() as db:
             return db.query(Report).filter(Report.ripple_id == ripple_id).count()
+
+    def test_my_history_is_private_filterable_and_hides_unavailable_content(self):
+        first = self.post("/api/v1/ripples/1/report", 3, {"reason_code": "abuse", "detail": "补充说明"}).json()
+        self.post("/api/v1/ripples/1/report", 4, {"reason_code": "spam"})
+        path = "/api/v1/users/me/reports"
+        self.assertEqual(self.client.get(path).status_code, 401)
+        mine = self.client.get(path, headers=self.headers(3)).json()
+        self.assertEqual((mine["total"], mine["items"][0]["id"]), (1, first["id"]))
+        self.assertNotIn("reporter_name", mine["items"][0])
+        self.post(f"/api/v1/admin/reports/{first['id']}/handle", 1, {"action": "uphold"})
+        hidden = self.client.get(path, headers=self.headers(3), params={"status": "uphold"}).json()
+        self.assertIsNone(hidden["items"][0]["ripple_preview"])
+        self.assertFalse(hidden["items"][0]["can_open"])
+        self.assertEqual(self.client.get(path, headers=self.headers(2)).json()["total"], 0)
+        self.assertEqual(self.client.get(path, headers=self.headers(3), params={"status": "pending"}).json()["items"], [])
+
+    def test_my_appeals_preserve_own_reason_and_handle_result(self):
+        appeal = self.post("/api/v1/ripples/2/appeal", 3, {"reason": "申请复核"}).json()
+        path = "/api/v1/users/me/appeals"
+        own = self.client.get(path, headers=self.headers(3)).json()
+        self.assertEqual((own["total"], own["items"][0]["reason"]), (1, "申请复核"))
+        self.assertTrue(own["items"][0]["can_open"])
+        self.assertEqual(self.client.get(path, headers=self.headers(2)).json()["items"], [])
+        self.post(f"/api/v1/admin/appeals/{appeal['id']}/handle", 1, {"action": "reject", "note": "请补充信息"})
+        history = self.client.get(path, headers=self.headers(3), params={"status": "rejected", "limit": 1}).json()
+        self.assertEqual(history["items"][0]["handle_note"], "请补充信息")
+
+    def test_my_records_paginate_after_multiple_submissions(self):
+        first = self.post("/api/v1/ripples/1/report", 3, {"reason_code": "abuse"}).json()
+        self.post(f"/api/v1/admin/reports/{first['id']}/handle", 1, {"action": "dismiss"})
+        second = self.post("/api/v1/ripples/1/report", 3, {"reason_code": "other"}).json()
+        path = "/api/v1/users/me/reports"
+        current = self.client.get(path, headers=self.headers(3), params={"limit": 1}).json()
+        previous = self.client.get(path, headers=self.headers(3), params={"limit": 1, "offset": 1}).json()
+        self.assertEqual(current["total"], 2)
+        self.assertEqual([item["id"] for item in current["items"]], [second["id"]])
+        self.assertEqual([item["id"] for item in previous["items"]], [first["id"]])
+
+    def test_concurrent_report_and_appeal_handling_notifies_once(self):
+        report = self.post("/api/v1/ripples/1/report", 3, {"reason_code": "abuse"}).json()
+        appeal = self.post("/api/v1/ripples/2/appeal", 3, {"reason": "申请复核"}).json()
+        for path, payload, recipient, kind in [
+            (f"/api/v1/admin/reports/{report['id']}/handle", {"action": "dismiss"}, 3, "report"),
+            (f"/api/v1/admin/appeals/{appeal['id']}/handle", {"action": "reject"}, 3, "appeal"),
+        ]:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                responses = list(pool.map(lambda _: self.post(path, 1, payload), range(4)))
+            self.assertEqual(sorted(item.status_code for item in responses), [200, 409, 409, 409])
+            self.assertEqual(len([item for item in self.notifications(recipient) if item.kind == kind]), 1)
+
+    def test_deleted_content_can_be_closed_without_restoring_it(self):
+        report = self.post("/api/v1/ripples/1/report", 3, {"reason_code": "abuse"}).json()
+        appeal = self.post("/api/v1/ripples/2/appeal", 3, {"reason": "申请复核"}).json()
+        self.client.delete("/api/v1/ripples/1", headers=self.headers(2))
+        self.client.delete("/api/v1/ripples/2", headers=self.headers(3))
+        close_report = self.post(f"/api/v1/admin/reports/{report['id']}/handle", 1, {"action": "dismiss"})
+        close_appeal = self.post(f"/api/v1/admin/appeals/{appeal['id']}/handle", 1, {"action": "reject"})
+        self.assertEqual(close_report.status_code, 200, close_report.text)
+        self.assertEqual(close_appeal.status_code, 200, close_appeal.text)
+        with self.Session() as db:
+            self.assertEqual(db.get(Ripple, 1).status, "deleted")
+            self.assertEqual(db.get(Ripple, 2).status, "deleted")
 
     # ---------- 举报 ----------
     def test_only_published_and_not_own_can_be_reported(self):

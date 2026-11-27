@@ -10,8 +10,10 @@ from app.schemas.user import (
     UserProfile, UserUpdate,
 )
 from app.schemas.interaction import CollectionPage, LikePage
+from app.schemas.activity import AuthorActivity
+from app.schemas.report import MyAppealPage, MyReportPage, AppealStatus, ReportStatus
 from app.schemas.ripple import RippleOut
-from app.services import follow_service, interaction_service, ripple_service, user_service
+from app.services import activity_service, follow_service, interaction_service, report_service, ripple_service, user_service
 
 router = APIRouter()
 
@@ -61,6 +63,29 @@ def delete_account(
     """注销本人账号：需密码确认，账号及其内容将被删除。"""
     user_service.delete_account(db, user, data)
     return {"ok": True}
+
+
+@router.get("/me/activity", response_model=AuthorActivity)
+def my_activity(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return activity_service.author_activity(db, user)
+
+
+@router.get("/me/reports", response_model=MyReportPage)
+def my_reports(
+    status: ReportStatus | None = None, limit: int = Query(10, ge=1, le=50),
+    offset: int = Query(0, ge=0), user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return report_service.my_reports(db, user, status_filter=status, limit=limit, offset=offset)
+
+
+@router.get("/me/appeals", response_model=MyAppealPage)
+def my_appeals(
+    status: AppealStatus | None = None, limit: int = Query(10, ge=1, le=50),
+    offset: int = Query(0, ge=0), user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return report_service.my_appeals(db, user, status_filter=status, limit=limit, offset=offset)
 
 
 @router.get("/{user_id}", response_model=UserProfile)
