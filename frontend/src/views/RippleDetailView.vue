@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { toast } from '@/utils/toast'
 import { ChatDotRound, Refresh } from '@element-plus/icons-vue'
@@ -16,13 +16,23 @@ import { MAX_ECHO_DEPTH } from '@/constants/limits'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
+const router = useRouter()
 const detail = ref<RippleDetail | null>(null)
 const loading = ref(false)
 const failed = ref(false)
 const store = useUserStore()
 const posting = ref(false)
 const deleting = ref(false)
-const echoView = ref('discussion')
+const echoView = computed({
+  get: () => route.query.view === 'tree' && !route.hash ? 'tree' : 'discussion',
+  set: (view: string) => {
+    void router.replace({ query: { ...route.query, view: view === 'tree' ? 'tree' : undefined }, hash: '' })
+  },
+})
+const sort = ref('oldest')
+const collapsedAll = ref(false)
+const collapseVersion = ref(0)
+const discussion = ref<HTMLElement>()
 const selectedEcho = ref<EchoOut | null>(null)
 const replyTarget = ref<EchoOut | null>(null)
 const content = ref('')
@@ -49,6 +59,47 @@ const appealStatusLabels: Record<string, string> = {
   pending: '待处理', approved: '申诉通过', rejected: '申诉驳回',
 }
 let requestVersion = 0
+
+const echoEntries = computed(() => {
+  const entries: { echo: EchoOut; depth: number }[] = []
+  function visit(nodes: EchoOut[], depth: number) {
+    for (const echo of nodes) {
+      entries.push({ echo, depth })
+      visit(echo.children, depth + 1)
+    }
+  }
+  visit(detail.value?.echoes ?? [], 1)
+  return entries
+})
+const participantCount = computed(() => new Set([
+  detail.value?.ripple.user.id, ...echoEntries.value.map(item => item.echo.user.id),
+].filter(id => id !== undefined)).size)
+const maximumDepth = computed(() => Math.max(0, ...echoEntries.value.map(item => item.depth)))
+const sortedEchoes = computed(() => [...(detail.value?.echoes ?? [])].sort((a, b) => {
+  if (sort.value === 'liked' && a.like_count !== b.like_count) return b.like_count - a.like_count
+  const order = a.created_at.localeCompare(b.created_at) || a.id - b.id
+  return sort.value === 'newest' ? -order : order
+}))
+
+function setCollapsed(collapse: boolean) {
+  collapsedAll.value = collapse
+  collapseVersion.value++
+}
+
+async function locateEcho(id: number) {
+  setCollapsed(false)
+  await router.replace({ query: { ...route.query, view: undefined }, hash: `#echo-${id}` })
+  await nextTick()
+  const element = document.getElementById(`echo-${id}`)
+  element?.focus({ preventScroll: true })
+  element?.scrollIntoView({ block: 'center' })
+}
+
+function latestEcho() {
+  const latest = [...echoEntries.value].sort((a, b) =>
+    b.echo.created_at.localeCompare(a.echo.created_at) || b.echo.id - a.echo.id)[0]
+  if (latest) void locateEcho(latest.echo.id)
+}
 
 function depthOf(id: number, nodes = detail.value?.echoes || [], level = 1): number {
   for (const node of nodes) {
@@ -88,13 +139,21 @@ async function submitEcho() {
   const id = Number(route.params.id)
   posting.value = true
   try {
-    await createEcho(id, { content: text, parent_echo_id: replyTarget.value?.id ?? null, emotion_code: emotion.value || null })
+    const created = await createEcho(id, { content: text, parent_echo_id: replyTarget.value?.id ?? null, emotion_code: emotion.value || null })
     if (Number(route.params.id) !== id) return
     content.value = ''
     emotion.value = null
     replyTarget.value = null
     selectedEcho.value = null
     await loadDetail()
+    if (Number(route.params.id) !== id) return
+    if (echoView.value === 'tree') {
+      selectedEcho.value = echoEntries.value.find(item => item.echo.id === created.id)?.echo ?? null
+      await nextTick()
+      discussion.value?.scrollIntoView({ block: 'start' })
+    } else {
+      await locateEcho(created.id)
+    }
     toast.success('回声已发出')
   } catch { /* 全局提示；保留未提交成功的内容 */ }
   finally { if (Number(route.params.id) === id) posting.value = false }
@@ -209,6 +268,8 @@ watch(() => route.params.id, () => {
   detail.value = null
   replyTarget.value = null
   selectedEcho.value = null
+  sort.value = 'oldest'
+  setCollapsed(false)
   content.value = ''
   emotion.value = null
   posting.value = false
@@ -220,9 +281,15 @@ watch(() => route.params.id, () => {
 }, { immediate: true })
 onBeforeUnmount(() => { requestVersion++ })
 
+watch([echoView, () => detail.value?.ripple.id], async ([view]) => {
+  if (view !== 'tree' || !detail.value) return
+  await nextTick()
+  discussion.value?.scrollIntoView({ block: 'start' })
+})
+
 watch([() => route.hash, detail], async ([hash, loaded]) => {
   if (!loaded || !/^#echo-\d+$/.test(hash)) return
-  echoView.value = 'discussion'
+  setCollapsed(false)
   await nextTick()
   if (route.hash !== hash) return
   const echo = document.getElementById(hash.slice(1))
@@ -324,7 +391,7 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
         @close="viewer.visible = false"
       />
 
-      <div class="echo-toolbar">
+      <div ref="discussion" class="echo-toolbar">
         <h3><ChatDotRound aria-hidden="true" />回声 · 涟漪树 <small>{{ detail.ripple.echo_count }} 条回声</small></h3>
         <el-radio-group v-model="echoView" aria-label="回声展示方式">
           <el-radio-button value="discussion">讨论列表</el-radio-button>
@@ -332,13 +399,28 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
         </el-radio-group>
         <el-button :icon="Refresh" :disabled="loading || posting || deleting" @click="selectedEcho = null; loadDetail()">刷新回声</el-button>
       </div>
+      <div v-if="echoEntries.length" class="discussion-summary">
+        <span>{{ participantCount }} 人参与 · {{ detail.echoes.length }} 条主分支 · 最深 {{ maximumDepth }} 层</span>
+        <el-button link @click="reply(null)">加入讨论</el-button>
+        <el-button link @click="latestEcho">跳到最新回声</el-button>
+      </div>
       <div v-if="detail.echoes.length === 0" class="empty-tip">
         还没有回声，等待第一个共鸣者。
       </div>
 
-      <ul v-if="echoView === 'discussion'" :key="route.hash" class="echo-list" aria-label="回声讨论">
-        <EchoNode v-for="echo in detail.echoes" :key="echo.id" :echo="echo" :interactive="interactive" @reply="reply" @remove="removeEcho" />
-      </ul>
+      <template v-if="echoView === 'discussion'">
+        <div v-if="detail.echoes.length" class="discussion-controls">
+          <label>主分支排序
+            <select v-model="sort"><option value="oldest">最早发起</option><option value="newest">最新发起</option><option value="liked">首条回声点赞最多</option></select>
+          </label>
+          <el-button text @click="setCollapsed(false)">展开全部</el-button>
+          <el-button text @click="setCollapsed(true)">收起回复</el-button>
+        </div>
+        <ul :key="route.hash" class="echo-list" aria-label="回声讨论">
+          <EchoNode v-for="echo in sortedEchoes" :key="echo.id" :echo="echo" :interactive="interactive"
+            :collapsed-all="collapsedAll" :collapse-version="collapseVersion" @reply="reply" @remove="removeEcho" />
+        </ul>
+      </template>
       <template v-else>
         <EchoTreeMap :ripple="detail.ripple" :echoes="detail.echoes" :selected-id="selectedEcho?.id ?? null" @select="selectedEcho = $event" />
         <article v-if="selectedEcho" class="card selected-echo" aria-label="选中的回声">
@@ -347,6 +429,7 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
             <span>{{ formatTime(selectedEcho.created_at) }}</span>
           </div>
           <p>{{ selectedEcho.content }}</p>
+          <el-button link @click="locateEcho(selectedEcho.id)">在讨论列表中定位</el-button>
           <el-button type="primary" :disabled="!interactive || depthOf(selectedEcho.id) >= MAX_ECHO_DEPTH" @click="reply(selectedEcho)">回复此回声</el-button>
           <el-button v-if="canDeleteSelected" type="danger" plain :disabled="!interactive" @click="removeEcho(selectedEcho)">删除此回声</el-button>
         </article>
@@ -373,6 +456,11 @@ watch([() => route.hash, detail], async ([hash, loaded]) => {
 </template>
 
 <style scoped>
+.echo-toolbar { scroll-margin-top: 110px; }
+.discussion-summary, .discussion-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13px; color: var(--wl-muted); }
+.discussion-summary > span { margin-right: auto; }
+.discussion-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.discussion-controls select { max-width: 100%; font: inherit; color: var(--wl-ink); border: 1px solid var(--wl-border); background: white; border-radius: 6px; padding: 6px; }
 .rc-head {
   display: flex;
   align-items: center;

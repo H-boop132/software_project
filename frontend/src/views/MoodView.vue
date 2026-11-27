@@ -52,7 +52,7 @@ onMounted(loadMoods)
     <header class="page-heading">
       <div>
         <h1>情绪气象</h1>
-        <p>带有情绪标签的公开微澜，按情绪统计。</p>
+        <p>统计全部当前公开微澜的情绪标签，包含历史内容。</p>
       </div>
       <div v-if="!loading && !failed && total" class="sample">
         <strong>{{ number.format(total) }}</strong>

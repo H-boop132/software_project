@@ -38,7 +38,7 @@ onMounted(loadTides)
     <header class="page-heading">
       <div>
         <h1>话题潮汐榜</h1>
-        <p>按热度排序，比较话题在过去两个 24 小时的互动。</p>
+        <p>按时间衰减热度排序，对比近 24 小时和前 24 小时的互动分。</p>
       </div>
       <details class="tide-method">
         <summary>热度如何计算</summary>

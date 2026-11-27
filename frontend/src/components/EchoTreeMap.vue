@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Minus, Plus, RefreshLeft } from '@element-plus/icons-vue'
 import type { EchoOut, RippleOut } from '@/api/types'
 
@@ -9,6 +9,8 @@ const emit = defineEmits<{ select: [echo: EchoOut | null] }>()
 const viewport = ref<HTMLElement>()
 const zoom = ref(100)
 const collapsed = ref(new Set<number>())
+const fitting = ref(true)
+let observer: ResizeObserver | undefined
 const nodeWidth = 204
 const columnStep = 252
 const gutter = 22
@@ -80,16 +82,71 @@ function toggle(id: number) {
 }
 
 function resize(step: number) {
-  zoom.value = Math.min(150, Math.max(50, zoom.value + step))
+  const el = viewport.value
+  const oldScale = zoom.value / 100
+  const centerX = el ? (el.scrollLeft + el.clientWidth / 2) / oldScale : 0
+  const centerY = el ? (el.scrollTop + el.clientHeight / 2) / oldScale : 0
+  fitting.value = false
+  zoom.value = Math.min(150, Math.max(10, zoom.value + step))
+  void nextTick(() => el?.scrollTo({
+    left: centerX * zoom.value / 100 - el.clientWidth / 2,
+    top: centerY * zoom.value / 100 - el.clientHeight / 2,
+  }))
 }
 
-function reset() {
+function fitView() {
+  const el = viewport.value
+  if (!el) return
+  fitting.value = true
+  zoom.value = Math.max(10, Math.min(100, Math.floor(Math.min(
+    (el.clientWidth - 12) / graph.value.width,
+    (el.clientHeight - 12) / graph.value.height,
+  ) * 100)))
+  void nextTick(() => el.scrollTo({ left: 0, top: 0 }))
+}
+
+async function focusSelection() {
+  const next = new Set(collapsed.value)
+  function reveal(nodes: EchoOut[], ancestors: number[]): boolean {
+    return nodes.some(echo => {
+      if (echo.id === props.selectedId) {
+        ancestors.forEach(id => next.delete(id))
+        return true
+      }
+      return reveal(echo.children, [...ancestors, echo.id])
+    })
+  }
+  if (props.selectedId !== null) reveal(props.echoes, [])
+  fitting.value = false
+  collapsed.value = next
   zoom.value = 100
+  await nextTick()
+  const node = graph.value.nodes.find(item => (item.echo?.id ?? null) === props.selectedId)
+  const el = viewport.value
+  if (node && el) el.scrollTo({
+    left: node.x + nodeWidth / 2 - el.clientWidth / 2,
+    top: node.y - el.clientHeight / 2,
+  })
+}
+
+async function reset() {
   collapsed.value = new Set()
-  viewport.value?.scrollTo({ left: 0, top: 0 })
+  await nextTick()
+  fitView()
 }
 
 watch(() => props.ripple.id, reset)
+watch(() => [graph.value.width, graph.value.height], () => {
+  if (fitting.value) void nextTick(fitView)
+})
+onMounted(() => {
+  observer = new ResizeObserver(() => {
+    if (fitting.value) fitView()
+  })
+  if (viewport.value) observer.observe(viewport.value)
+  fitView()
+})
+onBeforeUnmount(() => observer?.disconnect())
 </script>
 
 <template>
@@ -97,12 +154,14 @@ watch(() => props.ripple.id, reset)
     <header class="map-toolbar">
       <div class="map-guide">
         <strong>回声关系图</strong>
-        <span>选择节点查看内容 · 用 ＋／− 展开或收起分支</span>
+        <span>先看整体，再选择节点阅读 · 用 ＋／− 展开或收起分支</span>
       </div>
       <div class="map-controls" role="group" aria-label="涟漪树缩放">
-        <button type="button" :disabled="zoom <= 50" aria-label="缩小涟漪树" @click="resize(-10)"><Minus aria-hidden="true" /></button>
+        <button type="button" :disabled="zoom <= 10" aria-label="缩小涟漪树" @click="resize(-10)"><Minus aria-hidden="true" /></button>
         <output aria-label="当前缩放比例">{{ zoom }}%</output>
         <button type="button" :disabled="zoom >= 150" aria-label="放大涟漪树" @click="resize(10)"><Plus aria-hidden="true" /></button>
+        <button type="button" @click="fitView">适应画布</button>
+        <button type="button" @click="focusSelection">{{ selectedId === null ? '定位原帖' : '聚焦所选' }}</button>
         <button type="button" class="reset-view" @click="reset"><RefreshLeft aria-hidden="true" />重置视图</button>
       </div>
     </header>
@@ -154,14 +213,14 @@ watch(() => props.ripple.id, reset)
 .map-guide { display: grid; gap: 4px; }
 .map-guide strong { color: var(--wl-ink); font-size: 15px; }
 .map-guide span, .map-legend { font-size: 12px; color: var(--wl-muted); }
-.map-controls { display: flex; align-items: center; gap: 5px; }
+.map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .map-controls button { min-width: 34px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #dbe7df; border-radius: 8px; background: #f7faf8; color: #295d50; cursor: pointer; font: inherit; font-size: 12px; padding: 5px 8px; }
 .map-controls button:hover:not(:disabled) { background: #eaf2eb; }
 .map-controls button:disabled { color: #87968e; cursor: default; }
 .map-controls button svg { width: 13px; height: 13px; }
 .map-controls output { min-width: 40px; text-align: center; color: #35584c; font-size: 12px; font-variant-numeric: tabular-nums; }
 .reset-view { margin-left: 3px; }
-.map-viewport { min-height: 176px; max-height: min(490px, 65vh); overflow: auto; border-block: 1px solid #d8e5dd; background: radial-gradient(circle, #709b892c 1px, transparent 1.25px) 0 0 / 17px 17px, #eef5ef; }
+.map-viewport { min-height: 200px; height: min(490px, 65vh); overflow: auto; border-block: 1px solid #d8e5dd; background: radial-gradient(circle, #709b892c 1px, transparent 1.25px) 0 0 / 17px 17px, #eef5ef; }
 .map-frame { position: relative; overflow: clip; }
 .map-surface { transform-origin: top left; position: relative; }
 .map-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -191,6 +250,7 @@ watch(() => props.ripple.id, reset)
 .map-legend span:nth-child(2) i { width: 17px; height: 3px; }
 .map-scroll-hint { margin-left: auto; }
 @media (max-width: 465px) {
+  .map-viewport { height: min(340px, 50vh); }
   .map-scroll-hint { margin-left: 0; width: 100%; }
 }
 </style>

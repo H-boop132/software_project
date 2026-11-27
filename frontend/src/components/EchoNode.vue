@@ -1,17 +1,35 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { toast } from '@/utils/toast'
 import type { EchoOut } from '@/api/types'
 import { setEchoLike } from '@/api/ripples'
 import { MAX_ECHO_DEPTH } from '@/constants/limits'
 import { useUserStore } from '@/stores/user'
 
 // depth 从 1 起算：第一条回声为第 1 层，与后端校验口径一致
-const props = withDefaults(defineProps<{ echo: EchoOut; depth?: number; interactive: boolean }>(), { depth: 1 })
+const props = withDefaults(defineProps<{ echo: EchoOut; depth?: number; interactive: boolean; collapsedAll?: boolean; collapseVersion?: number }>(), { depth: 1, collapsedAll: false, collapseVersion: 0 })
 const emit = defineEmits<{ reply: [echo: EchoOut]; remove: [echo: EchoOut] }>()
 const store = useUserStore()
-const collapsed = ref(false)
+const collapsed = ref(props.collapsedAll)
+const route = useRoute()
+const router = useRouter()
 const liking = ref(false)
 const canDelete = computed(() => props.echo.user.id === store.user?.id || store.user?.role === 'admin')
+watch(() => props.collapseVersion, () => { collapsed.value = props.collapsedAll })
+
+async function copyLink() {
+  const link = router.resolve({
+    name: 'ripple-detail', params: { id: route.params.id }, hash: `#echo-${props.echo.id}`,
+  })
+  try {
+    await navigator.clipboard.writeText(new URL(link.href, window.location.origin).href)
+    toast.success('回声链接已复制')
+  } catch {
+    void router.replace({ path: route.path, hash: `#echo-${props.echo.id}` })
+    toast.info('已定位到这条回声，可复制地址栏链接')
+  }
+}
 
 async function toggleLike() {
   if (!props.interactive || liking.value) return
@@ -48,11 +66,12 @@ async function toggleLike() {
           <span class="like-count">{{ echo.like_count }}</span>
         </button>
         <el-button v-if="canDelete" link type="danger" :disabled="!interactive" :aria-label="`删除回声 ${echo.id}`" @click="emit('remove', echo)">删除</el-button>
+        <el-button link :aria-label="`复制回声 ${echo.id} 的链接`" @click="copyLink">复制链接</el-button>
         <el-button v-if="echo.children.length" link @click="collapsed = !collapsed" :aria-expanded="!collapsed">{{ collapsed ? '展开回复' : '收起回复' }}（{{ echo.children.length }}）</el-button>
       </div>
     </article>
     <ul v-if="echo.children.length && !collapsed" class="echo-children">
-      <EchoNode v-for="child in echo.children" :key="child.id" :echo="child" :depth="depth + 1" :interactive="interactive" @reply="emit('reply', $event)" @remove="emit('remove', $event)" />
+      <EchoNode v-for="child in echo.children" :key="child.id" :echo="child" :depth="depth + 1" :interactive="interactive" :collapsed-all="collapsedAll" :collapse-version="collapseVersion" @reply="emit('reply', $event)" @remove="emit('remove', $event)" />
     </ul>
   </li>
 </template>

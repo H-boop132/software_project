@@ -5,6 +5,7 @@ import type { CollectionOut, LikeOut, RippleOut } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 import LikeButton from '@/components/LikeButton.vue'
 import CollectionButton from '@/components/CollectionButton.vue'
+import { restoreOriginalImage, thumbnailUrl } from '@/utils/images'
 
 defineProps<{ ripple: RippleOut }>()
 const emit = defineEmits<{
@@ -108,7 +109,7 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
           class="rc-image-button"
           :aria-label="`查看第 ${i + 1} 张配图`"
           @click="openViewer(ripple.images, i)"
-        ><img :src="url" class="rc-img" alt="" loading="lazy" @load="updateArrows" /></button>
+        ><img :src="thumbnailUrl(url)" class="rc-img" alt="" loading="lazy" @load="updateArrows" @error="restoreOriginalImage($event, url)" /></button>
       </div>
       <button
         v-if="ripple.images.length > 1"
@@ -132,6 +133,7 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
     <div class="rc-foot">
       <router-link v-if="ripple.topic" :to="{ name: 'topic', params: { id: ripple.topic.id } }" class="rc-topic"># {{ ripple.topic.name }}</router-link>
       <router-link :to="`/ripples/${ripple.id}`" class="rc-stat" :aria-label="`查看回声，共 ${ripple.echo_count} 条`"><ChatDotRound aria-hidden="true" />{{ ripple.echo_count }}</router-link>
+      <router-link v-if="ripple.echo_count > 1" :to="{ name: 'ripple-detail', params: { id: ripple.id }, query: { view: 'tree' } }" class="rc-tree-entry">查看回声树</router-link>
       <LikeButton :ripple="ripple" @updated="emit('like-updated', $event)" />
       <CollectionButton :ripple="ripple" @updated="emit('collection-updated', $event)" />
     </div>
@@ -139,6 +141,7 @@ onBeforeUnmount(() => galleryObserver?.disconnect())
 </template>
 
 <style scoped>
+.rc-tree-entry { color: var(--wl-primary); font-size: 12px; text-underline-offset: 3px; padding: 4px; white-space: nowrap; }
 .ripple-card {
   padding: 17px 18px 13px;
   border-radius: 15px;

@@ -13,6 +13,7 @@ import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
 import MyLikes from '@/components/MyLikes.vue'
 import AuthorActivity from '@/components/AuthorActivity.vue'
+import { restoreOriginalImage, thumbnailUrl } from '@/utils/images'
 
 const userStore = useUserStore()
 const { isLoggedIn, user } = storeToRefs(userStore)
@@ -476,7 +477,8 @@ onMounted(async () => {
                 <img
                   v-for="(url, i) in r.images.slice(0, 4)"
                   :key="i"
-                  :src="url"
+                  :src="thumbnailUrl(url)"
+                  @error="restoreOriginalImage($event, url)"
                   class="mr-img"
                   alt="配图"
                   @click="openViewer(r.images, i)"
