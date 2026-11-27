@@ -137,6 +137,17 @@ SHORT_POSTS = [
     ("night", "demo", "joy", 29, "项目里又多了一条真正能跑通的流程。把小进步留在这里，下次焦虑时回来看看。"),
 ]
 
+DEMO_IMAGES = {
+    MAIN_CONTENT: ("ripple-1-a.jpeg",),
+    DISCUSSIONS[0][3]: ("ripple-2-a.jpeg",),
+    DISCUSSIONS[1][3]: ("ripple-4-a.jpeg",),
+    DISCUSSIONS[2][3]: ("ripple-2-a.jpeg",),
+    DISCUSSIONS[3][3]: ("ripple-3-a.jpeg", "ripple-3-d.jpeg"),
+    SHORT_POSTS[0][4]: ("ripple-6-a.jpeg",),
+    SHORT_POSTS[2][4]: ("ripple-2-a.jpeg",),
+    SHORT_POSTS[4][4]: ("ripple-3-a.jpeg",),
+}
+
 
 def seed(db: Session, now: datetime) -> dict:
     added = Counter()
@@ -179,6 +190,13 @@ def seed(db: Session, now: datetime) -> dict:
             added["ripples"] += 1
         if content == MAIN_CONTENT:
             main_id = post.id
+        if post.status == "published" and not post.images and content in DEMO_IMAGES:
+            names = DEMO_IMAGES[content]
+            for name in names:
+                if not (Path(settings.upload_dir) / name).is_file():
+                    raise FileNotFoundError(f"Missing demonstration image: {name}")
+            post.images = [f"{settings.upload_url_prefix.rstrip('/')}/{name}" for name in names]
+            added["illustrated_posts"] += 1
         posts.append(post)
         existing = {
             (echo.parent_echo_id, echo.content): echo
