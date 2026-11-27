@@ -54,6 +54,7 @@ def delete_upload(url: str) -> bool:
         return False
     try:
         path.unlink(missing_ok=True)
+        thumbnail_path(path).unlink(missing_ok=True)
         return True
     except OSError as error:  # 权限、占用等异常不影响主业务流程
         logger.warning("删除上传文件失败 %s: %s", path, error)
@@ -67,3 +68,7 @@ def delete_upload_if_unused(db: Session, url: str | None) -> bool:
     if is_referenced(db, url):
         return False
     return delete_upload(url)
+
+
+def thumbnail_path(original: Path) -> Path:
+    return original.parent / ".thumbnails" / f"{original.name}.webp"
