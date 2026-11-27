@@ -22,7 +22,8 @@ from app.models import (
 from app.services.echo_service import MAX_ECHO_DEPTH
 
 LOCK_NAME = "weilan_demo_community_v1"
-MAIN_CONTENT = "汇报前的灵感共创：如果只能用五分钟介绍我们的微澜，你最想展示哪个瞬间？我想从一个念头出发，看看它怎样被不同的人接住，最后长成一棵回声树。"
+LEGACY_MAIN_CONTENT = "汇报前的灵感共创：如果只能用五分钟介绍我们的微澜，你最想展示哪个瞬间？我想从一个念头出发，看看它怎样被不同的人接住，最后长成一棵回声树。"
+MAIN_CONTENT = "想在校园里办一个周末灵感交换会：每个人带一个最近没想明白的问题，找几位同学一起聊。时间、地点和参与方式怎么安排，才能让第一次来的人也愿意开口？"
 
 NEW_USERS = [
     ("demo_chen", "陈序", "把复杂问题拆成能验证的小步骤。", "think"),
@@ -34,7 +35,7 @@ NEW_USERS = [
 ]
 
 # Keys explicitly identify parents, keeping branches reproducible on repeated runs.
-MAIN_TREE = [
+LEGACY_MAIN_TREE = [
     ("a1", None, "lin", "我想展示一个普通想法变成具体方案的过程，先从发布一条微澜开始。", "think"),
     ("a2", "a1", "demo_chen", "然后让另一位同学补充一个不同角度，观众就知道回声不只是评论。", "think"),
     ("a3", "a2", "ke", "比如我会追问：如果这个方案失败了，我们怎样知道是哪一步出了问题？", "fear"),
@@ -64,6 +65,42 @@ MAIN_TREE = [
     ("d2b", "d1", "demo_wen", "我更想保留那些安静的记录，今天没有结论也值得被听见。", "sorrow"),
     ("d3b", "d2b", "demo_qiao", "同意，能认真听见彼此，本身就是一个值得展示的结果。", "calm"),
 ]
+
+MAIN_ECHO_TEXT = {
+    "a1": "可以先把问题写在卡片上，大家选一张自己感兴趣的，再坐到一起聊。",
+    "a2": "卡片上要不要加一句背景？只有一个问题，别人可能不知道从哪里接话。",
+    "a3": "我有点担心问题太大，比如“毕业以后怎么办”，一小时肯定聊不完。",
+    "a4": "那就试着缩小范围，比如“这学期怎么找到一次合适的实习”。",
+    "a5": "我可以分享投简历的经历，但每个人的方向不同，答案可能也不同。",
+    "a6": "我们可以先交换各自试过的方法，把有帮助的线索记下来。",
+    "a7": "卡片背面留一个空白区，结束时每个人写下一个准备尝试的行动。",
+    "a8": "我愿意先试试！下周再碰面的时候，还能聊聊那个行动有没有用。",
+    "a3b": "也可以放几张轻一点的问题卡，让刚来的同学先热身。",
+    "a4b": "比如“最近在哪本书里读到一句想和别人讨论的话”，这个我很想听。",
+    "b1": "地点我推荐图书馆一楼的讨论区，周末人少，也有可以写字的桌子。",
+    "b2": "图书馆需要预约吗？我怕大家到了以后才发现不能坐那么多人。",
+    "b3": "我问过前台，四人以上的小组要提前登记，可以先预约两张桌子。",
+    "b4": "那我周三去确认，报名时先按八个人准备，人数多了再加一场。",
+    "b2b": "天气好的话也可以在银杏树旁边，不过下雨时得有备用地点。",
+    "b3b": "室外轻松一点，声音也容易散，分享经历时可能听不清。",
+    "b4b": "第一场先放室内吧，结束以后想继续聊天的人再一起去散步。",
+    "c1": "我想做一个小海报，大家可以把自己带来的书、照片或者手账拍进去。",
+    "c2": "照片要提前征得同意。有些同学只是想聊天，不一定愿意出现在海报里。",
+    "c3": "可以只拍桌上的物品和手写卡片，人物照片另外询问。",
+    "c4": "这个方式挺好，我有一本写满批注的小说，可以拿来当第一张素材。",
+    "c2b": "海报上加清楚时间、地点和报名方式就够了，手机上也要能一眼看清。",
+    "d1": "我有兴趣，但第一次参加陌生活动会紧张，能不能允许先旁听？",
+    "d2": "同感，我常常要听别人聊一会儿，才知道自己能分享些什么。",
+    "d3": "可以准备一张“想说的时候再加入”的卡片，让主持人别挨个点名。",
+    "d4": "记下了，报名表加上旁听选项，也允许中途休息，第一场轻松一点。",
+    "d2b": "我还担心讨论变成互相给建议，有时只是想把困惑讲出来。",
+    "d3b": "开始前可以先问一句“你想听建议，还是想让我们先听你说”，这样舒服很多。",
+}
+MAIN_TREE = [
+    (key, parent, writer, MAIN_ECHO_TEXT[key], tone)
+    for key, parent, writer, _, tone in LEGACY_MAIN_TREE
+]
+LEGACY_ECHO_TEXT = {item[0]: item[3] for item in LEGACY_MAIN_TREE}
 
 DISCUSSIONS = [
     (
@@ -180,6 +217,15 @@ def seed(db: Session, now: datetime) -> dict:
         post = db.scalar(select(Ripple).where(
             Ripple.user_id == users[author].id, Ripple.content == content,
         ).order_by(Ripple.id).limit(1))
+        if post is None and content == MAIN_CONTENT:
+            post = db.scalar(select(Ripple).where(
+                Ripple.user_id == users[author].id, Ripple.content == LEGACY_MAIN_CONTENT,
+                Ripple.status == "published",
+            ).order_by(Ripple.id).limit(1))
+            if post is not None:
+                post.content = content
+                post.topic_id = topics[slug].id
+                added["refreshed_posts"] += 1
         if post is None:
             post = Ripple(
                 user_id=users[author].id, topic_id=topics[slug].id, content=content,
@@ -213,6 +259,12 @@ def seed(db: Session, now: datetime) -> dict:
                 raise ValueError("An echo exceeds the supported tree depth")
             max_depth = max(max_depth, depth)
             echo = existing.get((parent_id, text))
+            if echo is None and content == MAIN_CONTENT:
+                legacy = existing.get((parent_id, LEGACY_ECHO_TEXT[key]))
+                if legacy is not None and legacy.user_id == users[writer].id:
+                    legacy.content = text
+                    echo = legacy
+                    added["refreshed_echoes"] += 1
             if echo is None:
                 echo = Echo(
                     root_ripple_id=post.id, parent_echo_id=parent_id,
@@ -234,7 +286,7 @@ def seed(db: Session, now: datetime) -> dict:
             depths[key] = depth
             all_echoes.append(echo)
 
-    make_discussion("coding", "demo", "think", MAIN_CONTENT, now - timedelta(minutes=90), MAIN_TREE)
+    make_discussion("campus", "demo", "think", MAIN_CONTENT, now - timedelta(minutes=90), MAIN_TREE)
     for index, (slug, author, mood, content, tree) in enumerate(DISCUSSIONS):
         make_discussion(slug, author, mood, content, now - timedelta(hours=4 + index * 6), tree)
 
