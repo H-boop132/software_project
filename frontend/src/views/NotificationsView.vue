@@ -41,9 +41,9 @@ function iconFor(kind: NotificationKind) {
 }
 
 function destination(item: NotificationItem) {
-  // 举报结果不跳到可能已下架的微澜，落到个人主页避免举报人看到 404。
-  if (item.kind === 'report') return { name: 'profile' }
-  if (item.kind === 'moderation' || item.kind === 'appeal' || item.kind === 'like' || item.kind === 'collection') {
+  if (item.kind === 'report') return { name: 'support', query: { tab: 'reports' } }
+  if (item.kind === 'appeal') return { name: 'support', query: { tab: 'appeals' } }
+  if (item.kind === 'moderation' || item.kind === 'like' || item.kind === 'collection') {
     return item.ripple_id !== null
       ? { name: 'ripple-detail', params: { id: item.ripple_id } }
       : { name: 'profile' }

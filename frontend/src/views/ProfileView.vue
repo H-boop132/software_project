@@ -12,6 +12,7 @@ import { cleanupUpload, uploadImage } from '@/api/upload'
 import ImageViewer from '@/components/ImageViewer.vue'
 import MyCollections from '@/components/MyCollections.vue'
 import MyLikes from '@/components/MyLikes.vue'
+import AuthorActivity from '@/components/AuthorActivity.vue'
 
 const userStore = useUserStore()
 const { isLoggedIn, user } = storeToRefs(userStore)
@@ -400,6 +401,7 @@ onMounted(async () => {
             <div v-if="social" class="me-meta">
               <router-link :to="`/users/${user.id}?tab=following`">关注 {{ social.following_count }}</router-link>
               · <router-link :to="`/users/${user.id}?tab=followers`">粉丝 {{ social.follower_count }}</router-link>
+              · <router-link to="/support">举报与申诉记录</router-link>
             </div>
           </div>
         </div>
@@ -407,9 +409,18 @@ onMounted(async () => {
       <div v-else class="empty-tip">请先登录再访问个人主页</div>
     </div>
 
+    <AuthorActivity v-if="isLoggedIn && user?.role === 'user'" />
+
     <!-- 账号设置 -->
-    <div v-if="isLoggedIn && user" class="card account-card">
-      <h3>账号设置</h3>
+    <details v-if="isLoggedIn && user" class="card account-card">
+      <summary>账号设置</summary>
+      <div class="account-row">
+        <div class="account-copy">
+          <strong>举报与申诉记录</strong>
+          <span>查看已提交事项的处理进度与管理员反馈。</span>
+        </div>
+        <router-link class="account-support" to="/support">查看记录</router-link>
+      </div>
       <div class="account-row">
         <div class="account-copy">
           <strong>修改密码</strong>
@@ -432,7 +443,7 @@ onMounted(async () => {
         </div>
         <el-button v-if="user.role !== 'admin'" type="danger" plain @click="openDeleteDialog">注销账号</el-button>
       </div>
-    </div>
+    </details>
 
     <!-- 个人内容与收藏 -->
     <template v-if="isLoggedIn && user">
@@ -658,18 +669,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.profile-card {
-  max-width: 640px;
-}
-
-.account-card {
-  max-width: 640px;
-}
-
-.account-card h3 {
-  margin: 0 0 6px;
-  font-size: 18px;
-}
+.account-support { color: var(--wl-primary); font-size: 14px; white-space: nowrap; text-underline-offset: 4px; }
+.account-card > summary { cursor: pointer; font-size: 16px; font-weight: 650; }
+.account-card[open] > summary { margin-bottom: 15px; }
+.me-meta a { color: var(--wl-primary); text-underline-offset: 3px; }
 
 .account-row {
   display: flex;
